@@ -15,6 +15,7 @@
     <div class="brand"><i data-icon="rift" class="brand-icon"></i>RIFT<span>FORGE</span></div>
     <div id="tagchips"></div>
     <div id="clock">0:00</div>
+    <button id="infobtn" class="icon-btn" aria-label="How to play"><i data-icon="help"></i></button>
   </header>
 
   <div id="canvaswrap">
@@ -50,12 +51,22 @@
         <li><i data-icon="cards" class="li-icon c-accent"></i>Draft cards. Stack tags.</li>
       </ul>
       <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
+      <button class="ghost-btn" id="introinfo"><i data-icon="help"></i> HOW TO PLAY</button>
       <p class="credits">Icons: game-icons.net · CC BY 3.0</p>
     </div>
 
     <div class="panel hidden" id="draft-panel">
       <h2><i data-icon="cards"></i> CHOOSE ONE</h2>
       <div id="draft-cards"></div>
+    </div>
+
+    <div class="panel hidden" id="info-panel">
+      <div class="panel-head">
+        <h2><i data-icon="help"></i> HOW TO PLAY</h2>
+        <button id="infoclose" class="icon-btn" aria-label="Close"><i data-icon="close"></i></button>
+      </div>
+      <div id="info-body"></div>
+      <button class="big-btn" id="infoback">BACK</button>
     </div>
 
     <div class="panel hidden" id="end-panel">

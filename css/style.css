@@ -193,6 +193,49 @@ html, body {
 .shop-btn .s-effect { font-size: 11px; color: var(--dim); }
 .shop-btn .s-cost { font-size: 12px; color: var(--energy); }
 
+/* ---------- icon buttons & info panel ---------- */
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--dim);
+  font-size: 18px;
+  padding: 2px 4px;
+  cursor: pointer;
+  display: flex; align-items: center;
+}
+.icon-btn:active { color: var(--accent); transform: scale(.9); }
+.ghost-btn {
+  background: none;
+  border: 1px solid #33335c;
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.ghost-btn:active { border-color: var(--accent); color: var(--text); }
+.panel-head { display: flex; align-items: center; gap: 8px; }
+.panel-head h2 { flex: 1; text-align: left; }
+.panel-head .icon-btn { font-size: 20px; }
+
+#info-body { display: flex; flex-direction: column; gap: 16px; }
+.info-sec { display: flex; flex-direction: column; gap: 7px; }
+.info-sec h3 {
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  display: flex; align-items: center; gap: 6px;
+}
+.info-sec p { font-size: 12px; line-height: 1.55; color: #c0c0da; }
+.info-row { display: flex; gap: 9px; align-items: flex-start; font-size: 12px; }
+.info-row > .gi { font-size: 18px; margin-top: 1px; color: var(--accent); flex-shrink: 0; }
+.info-row b { color: var(--text); font-weight: 700; }
+.info-row span { display: block; color: var(--dim); line-height: 1.5; margin-top: 1px; }
+.info-sec .gi, .info-row span .gi { vertical-align: -0.15em; }
+
 /* ---------- floating popups ---------- */
 .float {
   position: fixed;

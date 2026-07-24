@@ -14,7 +14,7 @@ const VENT_AMOUNT = 20;
 const VENT_CD = 8;
 
 const MACHINES = {
-  dynamo:   { name: 'Dynamo',   icon: 'dynamo',   base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
+  dynamo:   { name: 'Dynamo',   icon: 'dynamo',    base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
   turbine:  { name: 'Turbine',  icon: 'turbine',  base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10[bolt] +2.2[flame]' },
   cooler:   { name: 'Cooler',   icon: 'cooler',   base: 60,  growth: 1.16, cool: 3,               desc: '−3[flame]' },
   injector: { name: 'Injector', icon: 'injector', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: '6[bolt]→[rift] +0.9[flame]' },
@@ -24,26 +24,26 @@ const MACHINES = {
 const iconize = str => str.replace(/\[(\w+)\]/g, (_, n) => icon(n));
 
 const TAGS = {
-  OVER: { icon: 'flame', name: 'Overclock' },
-  CRYO: { icon: 'snowflake', name: 'Cryo' },
-  FLUX: { icon: 'flux', name: 'Flux' },
-  AUTO: { icon: 'cog', name: 'Auto' },
+  OVER: { icon: 'flame', name: 'Overclock', blurb: 'More output, more [flame]. Run hot, win fast.' },
+  CRYO: { icon: 'snowflake', name: 'Cryo', blurb: 'Control [flame] and turn cooling into profit.' },
+  FLUX: { icon: 'flux', name: 'Flux', blurb: 'Charge the [rift] faster per [bolt] spent.' },
+  AUTO: { icon: 'cog', name: 'Auto', blurb: 'The forge acts without you. Stacks with itself.' },
 };
 
 // Cards can reference tag counts → visible synergies.
 const CARDS = [
-  { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: 'Dynamos +100%[bolt], +50%[flame]' },
+  { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: '[dynamo] Dynamos +100%[bolt], +50%[flame]' },
   { id: 'redline',   name: 'Redline Protocol', tags: ['OVER'], desc: '+6%[bolt] per 10 current [flame]', syn: 'Loves running hot.' },
-  { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: 'Turbines +75%[bolt]' },
+  { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: '[turbine] Turbines +75%[bolt]' },
   { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4[bolt]/s per current [flame]', syn: 'Heat becomes fuel.' },
-  { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: 'Coolers +80% effective' },
-  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: 'Vent grants 15[bolt] per [flame] vented', syn: 'Vent becomes a generator.' },
+  { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: '[cooler] Coolers +80% effective' },
+  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: '[steam] Vent grants 15[bolt] per [flame]', syn: 'Vent becomes a generator.' },
   { id: 'deepfreeze',name: 'Deep Freeze', tags: ['CRYO'], desc: 'Passive cooling +2[flame]/s' },
-  { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: 'Injectors +80% faster' },
+  { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: '[injector] Injectors +80% faster' },
   { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: '+12% charge per [flux] card', syn: 'Scales with every Flux pick.' },
   { id: 'coldfusion',name: 'Cold Fusion', tags: ['CRYO', 'FLUX'], desc: '[flame] below 40: charge +50%', syn: 'Rewards a cool forge.' },
-  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: 'Injectors +4[bolt] but +0.5[flame] each' },
-  { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Auto-buys a Dynamo every 6s' },
+  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: '[injector] Injectors +4[bolt], +0.5[flame] each' },
+  { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Auto-buys [dynamo] Dynamo every 6s' },
   { id: 'servovent', name: 'Servo Vents', tags: ['AUTO'], desc: 'Auto-vents 12[flame] above 75' },
   { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: '+15%[bolt] per [cog] card', syn: 'Scales with every Auto pick.' },
 ];
@@ -331,6 +331,62 @@ function pickCard(id) {
   renderChips();
 }
 
+// ---------- info / legend ----------
+function buildInfo() {
+  const row = (ic, name, text) =>
+    `<div class="info-row">${icon(ic)}<div><b>${name}</b>${text ? '<span>' + iconize(text) + '</span>' : ''}</div></div>`;
+
+  const machines = Object.values(MACHINES)
+    .map(m => row(m.icon, m.name, m.desc + (m.cool ? '' : ''))).join('');
+
+  const tags = Object.values(TAGS).map(t => row(t.icon, t.name, t.blurb)).join('');
+
+  $id('info-body').innerHTML = `
+    <div class="info-sec">
+      <h3>${icon('rift')} GOAL</h3>
+      <p>${iconize('Charge the [rift] Rift to 100% and you win. [injector] Injectors are the only thing that charges it — they pull [bolt] Energy out of your reserve and pour it into the Rift.')}</p>
+    </div>
+    <div class="info-sec">
+      <h3>${icon('hazard')} DANGER</h3>
+      <p>${iconize('Every machine makes [flame] Heat, and the Rift grows more unstable every minute. If [flame] Heat sits at 100 for 4 seconds, the forge melts down and the run ends.')}</p>
+    </div>
+    <div class="info-sec">
+      <h3>${icon('help')} SYMBOLS</h3>
+      ${row('bolt', 'Energy', 'Your spendable resource. Builds machines, feeds the [rift] Rift.')}
+      ${row('flame', 'Heat', 'Rises from machines and time. Hit 100 and you die.')}
+      ${row('rift', 'Rift Charge', 'Your progress. 100% = victory.')}
+      ${row('sparkles', 'Combo', 'Chained taps multiply the [jolt] Jolt, up to ×25.')}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('jolt')} CONTROLS</h3>
+      ${row('jolt', 'Tap the Rift', 'Manual [bolt] Energy. Tap fast to build a combo.')}
+      ${row('cog', 'Tap a Node', 'Buys that machine. It glows when you can afford it.')}
+      ${row('steam', 'Tap the Vent', 'Dumps ' + VENT_AMOUNT + ' [flame] Heat. ' + VENT_CD + 's cooldown.')}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('cog')} MACHINES</h3>
+      ${machines}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('cards')} CARD TAGS</h3>
+      <p>${iconize('At milestones you draft 1 of 3 [cards] Cards. Cards share tags, and several scale with how many of a tag you own — commit to a build.')}</p>
+      ${tags}
+    </div>`;
+}
+
+let infoResume = false;
+function openInfo() {
+  buildInfo();
+  infoResume = S && !S.paused && !S.over;
+  if (S) S.paused = true;
+  show('info-panel');
+}
+function closeInfo() {
+  if (infoResume) { hideOverlay(); S.paused = false; }
+  else show(S && S.over ? 'end-panel' : 'intro-panel');
+  infoResume = false;
+}
+
 // ---------- win / lose ----------
 function endStats() {
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
@@ -379,7 +435,7 @@ const $id = id => document.getElementById(id);
 
 function show(panelId) {
   $id('overlay').classList.remove('hidden');
-  ['intro-panel', 'draft-panel', 'end-panel'].forEach(p =>
+  ['intro-panel', 'draft-panel', 'end-panel', 'info-panel'].forEach(p =>
     $id(p).classList.toggle('hidden', p !== panelId));
 }
 function hideOverlay() { $id('overlay').classList.add('hidden'); }
@@ -889,6 +945,10 @@ document.addEventListener('gesturechange', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener('dblclick', e => e.preventDefault());
 document.addEventListener('contextmenu', e => e.preventDefault());
+$id('infobtn').addEventListener('click', openInfo);
+$id('introinfo').addEventListener('click', openInfo);
+$id('infoclose').addEventListener('click', closeInfo);
+$id('infoback').addEventListener('click', closeInfo);
 $id('startbtn').addEventListener('click', () => {
   hideOverlay();
   S.paused = false;
