@@ -23,7 +23,7 @@ It's static files. Open `index.html` in a browser, or:
 python3 -m http.server
 ```
 
-Deploys to GitHub Pages via `.github/workflows/deploy.yml`: on push, the workflow force-pushes the site to the `gh-pages` branch, which Pages serves (legacy branch deploy).
+Deploys to GitHub Pages via `.github/workflows/deploy.yml`: on push to the dev branch, the workflow publishes the commit to `main`, which Pages serves (Settings → Pages → Deploy from a branch → main / root).
 
 ## Structure
 

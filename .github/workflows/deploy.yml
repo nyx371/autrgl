@@ -1,21 +1,19 @@
 name: Deploy to GitHub Pages
 
-# Legacy gh-pages deploy: publish the site by force-pushing the current
-# commit to the gh-pages branch. Pages serves from that branch
-# (Settings → Pages → Deploy from a branch → gh-pages / root).
+# Pages is configured to serve from the main branch (Deploy from a branch →
+# main / root). Publishing = pushing the current commit to main; GitHub's
+# pages-build-deployment then goes live automatically.
 on:
   push:
     branches:
-      - main
       - claude/mobile-web-game-prototype-pfhi7c
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write
 
 concurrency:
-  group: gh-pages
+  group: pages-deploy
   cancel-in-progress: true
 
 jobs:
@@ -23,21 +21,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Publish to gh-pages branch
-        run: git push --force origin HEAD:refs/heads/gh-pages
-      - name: Enable Pages if not yet enabled
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh api "repos/${{ github.repository }}/pages" --silent 2>/dev/null; then
-            echo "Pages already enabled — build will trigger from the gh-pages push."
-          else
-            echo "Pages not enabled; attempting to enable (legacy build from gh-pages)..."
-            if gh api -X POST "repos/${{ github.repository }}/pages" \
-                 -f "source[branch]=gh-pages" -f "source[path]=/"; then
-              echo "Pages enabled successfully."
-            else
-              echo "::warning::Could not enable Pages with the workflow token."
-              echo "::warning::One-time manual step: Settings → Pages → Source 'Deploy from a branch' → branch 'gh-pages' → '/ (root)' → Save."
-            fi
-          fi
+      - name: Publish to main branch
+        run: git push --force origin HEAD:refs/heads/main
