@@ -70,6 +70,8 @@ function newRun() {
     ventCd: 0, servoCd: 0, autofabT: 0,
     melt: 0,
     totalVented: 0, jolts: 0,
+    combo: 0, comboT: 0, milestone: 0,
+    ending: null, endT: 0, endShown: false,
     paused: true, over: false,
   };
 }
@@ -155,6 +157,20 @@ function tick(dt) {
     }
   }
 
+  // combo decay
+  if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
+
+  // charge milestone celebrations (every 10%)
+  const ms = Math.floor(S.charge / GOAL * 10);
+  if (ms > S.milestone && ms < 10) {
+    S.milestone = ms;
+    sfx.chime();
+    buzz(15);
+    fx.ring('#4dd8ff', 5);
+    const r = cv.getBoundingClientRect();
+    popup(r.left + r.width / 2, r.top + r.height / 2, ms * 10 + '%', 'var(--charge)');
+  }
+
   // meltdown
   if (S.heat >= HEAT_CAP) {
     S.heat = HEAT_CAP;
@@ -199,10 +215,12 @@ function buy(key, silent, e) {
   S.energy -= c;
   S.counts[key]++;
   if (!silent) {
-    sfx.click();
+    sfx.buyTone(key);
     buzz(15);
-    popAt(e, $id('shop-' + key), '+1' + icon(MACHINES[key].icon), 'var(--accent)');
-    fx.burst();
+    const col = { dynamo: '#7c5cff', turbine: '#ffd75c', cooler: '#4dd8ff', injector: '#b45cff' }[key];
+    popAt(e, $id('shop-' + key), '+1' + icon(MACHINES[key].icon), col);
+    fx.ring(col, 3);
+    fx.burst(col);
   }
   renderShop(key);
 }
@@ -219,14 +237,26 @@ function doVent(amount) {
 
 function jolt(e) {
   if (S.paused || S.over) return;
-  const amt = calc().joltAmt;
+  S.combo = Math.min(25, S.combo + 1);
+  S.comboT = 1.1;
+  const mult = 1 + (S.combo - 1) * 0.05;
+  const amt = calc().joltAmt * mult;
   S.energy += amt;
   S.earned += amt;
   S.jolts++;
-  sfx.click();
+  sfx.tap(S.combo);
   buzz(8);
-  popAt(e, $id('jolt'), '+' + fmt(amt) + icon('bolt'), 'var(--energy)');
-  fx.burst();
+  const color = S.combo >= 15 ? '#ffffff' : S.combo >= 5 ? '#ffb75c' : 'var(--energy)';
+  popAt(e, $id('jolt'), '+' + fmt(amt) + icon('bolt') + (S.combo >= 5 ? ' ×' + S.combo : ''), color);
+  // lightning strike on the rift — at the tap point if the canvas was tapped
+  const r = cv.getBoundingClientRect();
+  let x, y;
+  if (e && e.target === cv) { x = e.clientX - r.left; y = e.clientY - r.top; }
+  else { x = W * (0.25 + Math.random() * 0.5); y = H * 0.12; }
+  fx.bolt(x, y);
+  fx.burstAt(x, y, '#ffd75c', 6);
+  const eb = document.querySelector('.energy-big');
+  eb.classList.remove('pop'); void eb.offsetWidth; eb.classList.add('pop');
 }
 
 function vent(e) {
@@ -241,7 +271,7 @@ function vent(e) {
   if (has('recycler') && vented > 0) {
     setTimeout(() => popAt(null, $id('vent'), '+' + fmt(vented * 15) + icon('bolt'), 'var(--energy)'), 150);
   }
-  fx.pulse('#8ad8ff');
+  fx.steam();
 }
 
 // ---------- drafts ----------
@@ -260,15 +290,22 @@ function openDraft() {
 
   const wrap = document.getElementById('draft-cards');
   wrap.innerHTML = '';
-  draftOffer.forEach(card => {
+  let pickLock = false;
+  draftOffer.forEach((card, ci) => {
     const btn = document.createElement('button');
     btn.className = 'card';
+    btn.style.animationDelay = (ci * 90) + 'ms';
     const tags = card.tags.map(t => icon(TAGS[t].icon) + ' ' + TAGS[t].name).join(' · ');
     btn.innerHTML =
       `<div class="c-top"><div class="c-name">${card.name}</div><div class="c-tags">${tags}</div></div>` +
       `<div class="c-desc">${iconize(card.desc)}</div>` +
       (card.syn ? `<div class="c-syn">${icon('sparkles')} ${card.syn}</div>` : '');
-    btn.addEventListener('click', () => pickCard(card.id));
+    btn.addEventListener('click', () => {
+      if (pickLock) return;
+      pickLock = true;
+      btn.classList.add('picked');
+      setTimeout(() => pickCard(card.id), 220);
+    });
     wrap.appendChild(btn);
   });
   show('draft-panel');
@@ -298,26 +335,35 @@ function endStats() {
     <div>${icon('steam')} vented <span>${Math.floor(S.totalVented)}</span></div>`;
 }
 
+function prepEnd(title, cls, desc) {
+  const t = document.getElementById('end-title');
+  t.innerHTML = title;
+  t.className = cls;
+  document.getElementById('end-desc').textContent = desc;
+  document.getElementById('end-stats').innerHTML = endStats();
+}
+
 function win() {
+  if (S.ending) return;
+  S.ending = 'win';
   S.over = true;
   sfx.win();
-  const t = document.getElementById('end-title');
-  t.innerHTML = icon('rift') + ' RIFT STABILIZED';
-  t.className = 'win';
-  document.getElementById('end-desc').textContent = 'The rift hums, tamed by your machines.';
-  document.getElementById('end-stats').innerHTML = endStats();
-  show('end-panel');
+  buzz([40, 60, 40, 60, 140]);
+  fx.flash('180,240,255', 0.75);
+  fx.ring('#4dd8ff', 6); fx.ring('#ffffff', 3);
+  fx.nova('#4dd8ff', 130);
+  prepEnd(icon('rift') + ' RIFT STABILIZED', 'win', 'The rift hums, tamed by your machines.');
 }
 
 function lose() {
+  if (S.ending) return;
+  S.ending = 'lose';
   S.over = true;
   sfx.lose();
-  const t = document.getElementById('end-title');
-  t.innerHTML = icon('skull') + ' MELTDOWN';
-  t.className = 'lose';
-  document.getElementById('end-desc').textContent = 'The forge ran too hot.';
-  document.getElementById('end-stats').innerHTML = endStats();
-  show('end-panel');
+  buzz([80, 50, 80, 50, 220]);
+  fx.flash('255,60,30', 0.85);
+  fx.nova('#ff5c4d', 90);
+  prepEnd(icon('skull') + ' MELTDOWN', 'lose', 'The forge ran too hot.');
 }
 
 // ---------- UI ----------
@@ -412,6 +458,8 @@ function renderHUD(R) {
     b.classList.toggle('can', can);
   }
 
+  document.querySelector('.heatbar').classList.toggle('crit', S.heat > 85 && !S.over);
+
   // meltdown warning
   const warn = $id('meltwarn');
   if (S.heat >= HEAT_CAP && !S.over) {
@@ -439,18 +487,72 @@ function resize() {
 window.addEventListener('resize', resize);
 
 const particles = [];
-let spawnAcc = 0;
+const arcs = [];   // lightning bolts: origin point, decaying life
+const rings = [];  // expanding feedback rings
+let flashFx = null; // fullscreen tint: { c: 'r,g,b', a }
+let spawnAcc = 0, emberAcc = 0;
+
+function spawn(x, y, vx, vy, life, c, mode, size) {
+  if (particles.length > 400) return;
+  particles.push({ x, y, vx, vy, life, max: life, c, mode, size: size || 3 });
+}
+
 const fx = {
-  pulseColor: null, pulseT: 0,
-  pulse(color) { this.pulseColor = color; this.pulseT = 1; },
-  burst() {
+  ring(c, lw) { rings.push({ t: 1, c, lw: lw || 3 }); },
+  pulse(c) { this.ring(c, 3); },
+  flash(rgb, a) { flashFx = { c: rgb, a }; },
+  bolt(x, y) { arcs.push({ x, y, t: 0.18, max: 0.18 }); },
+  burst(c) {
     const cx = W / 2, cy = H / 2;
-    for (let i = 0; i < 8; i++) {
-      const a = Math.random() * Math.PI * 2;
-      particles.push({ x: cx + Math.cos(a) * 60, y: cy + Math.sin(a) * 60, vx: Math.cos(a) * 40, vy: Math.sin(a) * 40, life: 0.6, max: 0.6, c: '#ffd75c' });
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 90;
+      spawn(cx + Math.cos(a) * 30, cy + Math.sin(a) * 30, Math.cos(a) * sp, Math.sin(a) * sp, 0.6, c || '#ffd75c', 'out');
+    }
+  },
+  burstAt(x, y, c, n) {
+    for (let i = 0; i < (n || 8); i++) {
+      const a = Math.random() * Math.PI * 2, sp = 50 + Math.random() * 80;
+      spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.55, c, 'out');
+    }
+  },
+  steam() {
+    const cx = W / 2, cy = H / 2;
+    this.ring('#8ad8ff', 4);
+    this.flash('140,220,255', 0.18);
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 90 + Math.random() * 130;
+      spawn(cx, cy, Math.cos(a) * sp, Math.sin(a) * sp, 0.8, i % 3 ? '#dff4ff' : '#8ad8ff', 'out', 2 + Math.random() * 3);
+    }
+  },
+  nova(c, n) {
+    const cx = W / 2, cy = H / 2;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 40 + Math.random() * 260;
+      spawn(cx, cy, Math.cos(a) * sp, Math.sin(a) * sp, 0.9 + Math.random() * 0.8, Math.random() < 0.3 ? '#ffffff' : c, 'out', 2 + Math.random() * 3);
     }
   },
 };
+
+function jagged(x1, y1, x2, y2, alpha) {
+  const segs = 7, dx = x2 - x1, dy = y2 - y1;
+  const dist = Math.hypot(dx, dy), nx = -dy / (dist || 1), ny = dx / (dist || 1);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  for (let i = 1; i < segs; i++) {
+    const f = i / segs, j = (Math.random() - 0.5) * dist * 0.18 * (1 - f);
+    ctx.lineTo(x1 + dx * f + nx * j, y1 + dy * f + ny * j);
+  }
+  ctx.lineTo(x2, y2);
+  ctx.globalAlpha = alpha * 0.35;
+  ctx.strokeStyle = '#4dd8ff';
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#e8fbff';
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
 
 function drawRift(dt) {
   ctx.clearRect(0, 0, W, H);
@@ -461,12 +563,15 @@ function drawRift(dt) {
   const t = performance.now() / 1000;
   const heatFrac = S.heat / HEAT_CAP;
   const chargeFrac = Math.min(1, S.charge / GOAL);
+  const channeling = !S.paused && !S.over && S.counts.injector > 0 && S.energy > 1;
 
-  // meltdown shake
-  let sx = 0, sy = 0;
-  if (S.melt > 0) { sx = (Math.random() - .5) * 8; sy = (Math.random() - .5) * 8; }
+  // shake: meltdown countdown > high-heat tremor > lose sequence
+  let shake = 0;
+  if (S.melt > 0) shake = 8;
+  else if (S.heat > 85 && !S.over) shake = (S.heat - 85) / 15 * 3;
+  if (S.ending === 'lose' && S.endT < 1) shake = 12 * (1 - S.endT);
   ctx.save();
-  ctx.translate(sx, sy);
+  ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
 
   // heat glow background
   if (heatFrac > 0.05) {
@@ -477,24 +582,26 @@ function drawRift(dt) {
     ctx.fillRect(-10, -10, W + 20, H + 20);
   }
 
-  // rift core: swirling arcs
+  // rift core: swirling arcs (spin faster as charge grows)
+  const spin = 1 + chargeFrac * 1.6 + (S.ending === 'win' ? S.endT * 6 : 0);
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
     const rr = rad * (0.55 + i * 0.12);
-    const off = t * (0.6 + i * 0.35) * (i % 2 ? -1 : 1);
+    const off = t * (0.6 + i * 0.35) * spin * (i % 2 ? -1 : 1);
     ctx.arc(cx, cy, rr, off, off + Math.PI * (1.1 + 0.3 * Math.sin(t + i)));
     ctx.strokeStyle = `rgba(124,92,255,${0.5 - i * 0.12})`;
     ctx.lineWidth = 2.5 - i * 0.5;
     ctx.stroke();
   }
 
-  // inner glow scales with charge
-  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 0.5);
+  // inner glow scales with charge; heartbeat pulse as it fills
+  const beat = 1 + Math.sin(t * (2 + chargeFrac * 6)) * 0.05 * chargeFrac;
+  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 0.5 * beat);
   g2.addColorStop(0, `rgba(77,216,255,${0.25 + chargeFrac * 0.6})`);
   g2.addColorStop(1, 'rgba(77,216,255,0)');
   ctx.fillStyle = g2;
   ctx.beginPath();
-  ctx.arc(cx, cy, rad * 0.5, 0, Math.PI * 2);
+  ctx.arc(cx, cy, rad * 0.5 * beat, 0, Math.PI * 2);
   ctx.fill();
 
   // charge ring
@@ -510,49 +617,84 @@ function drawRift(dt) {
   ctx.lineWidth = 4;
   ctx.stroke();
 
-  // particles: spawn rate follows production — automation made visible
+  // channeling: crackling arcs from the ring into the core
+  if (channeling && Math.random() < dt * (2 + S.counts.injector)) {
+    const a = Math.random() * Math.PI * 2;
+    arcs.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad, t: 0.14, max: 0.14 });
+  }
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const a = arcs[i];
+    a.t -= dt;
+    if (a.t <= 0) { arcs.splice(i, 1); continue; }
+    jagged(a.x, a.y, cx, cy, a.t / a.max);
+  }
+
+  // ambient particles: spawn rate follows production — automation made visible
   if (!S.paused && !S.over) {
     spawnAcc += dt * Math.min(50, 2 + R.eps * 0.35);
     while (spawnAcc >= 1) {
       spawnAcc--;
       const a = Math.random() * Math.PI * 2;
       const d = rad * (1.4 + Math.random() * 0.8);
-      particles.push({
-        x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d,
-        vx: 0, vy: 0, life: 2.2, max: 2.2,
-        c: Math.random() < heatFrac * 0.6 ? '#ff5c4d' : '#ffd75c',
-        seek: true,
-      });
+      spawn(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0, 0, 2.2,
+        Math.random() < heatFrac * 0.6 ? '#ff5c4d' : '#ffd75c', 'seek');
+    }
+    // embers rise as the forge overheats
+    if (S.heat > 55) {
+      emberAcc += dt * ((S.heat - 55) / 45) * 22;
+      while (emberAcc >= 1) {
+        emberAcc--;
+        spawn(Math.random() * W, H + 4, 0, -(30 + Math.random() * 60), 1.9, Math.random() < 0.5 ? '#ff5c4d' : '#ff9d4d', 'ember', 2);
+      }
     }
   }
+
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
     p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    if (p.seek) {
+    if (p.mode === 'seek') {
       const dx = cx - p.x, dy = cy - p.y;
       const dist = Math.hypot(dx, dy) || 1;
       p.vx += (dx / dist) * 140 * dt;
       p.vy += (dy / dist) * 140 * dt;
       if (dist < rad * 0.25) p.life = Math.min(p.life, 0.15);
+    } else if (p.mode === 'out') {
+      p.vx *= 1 - 1.6 * dt;
+      p.vy *= 1 - 1.6 * dt;
+    } else if (p.mode === 'ember') {
+      p.vx = Math.sin(p.life * 5 + p.max * 9) * 14;
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
     ctx.globalAlpha = Math.min(1, p.life / p.max * 2);
     ctx.fillStyle = p.c;
-    ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+    const sz = p.size;
+    ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
   }
   ctx.globalAlpha = 1;
 
-  // action pulse ring
-  if (fx.pulseT > 0) {
-    fx.pulseT -= dt * 2;
+  // feedback rings
+  for (let i = rings.length - 1; i >= 0; i--) {
+    const rg = rings[i];
+    rg.t -= dt * 1.8;
+    if (rg.t <= 0) { rings.splice(i, 1); continue; }
     ctx.beginPath();
-    ctx.arc(cx, cy, rad * (1.15 + (1 - fx.pulseT) * 0.6), 0, Math.PI * 2);
-    ctx.strokeStyle = fx.pulseColor;
-    ctx.globalAlpha = Math.max(0, fx.pulseT);
-    ctx.lineWidth = 3;
+    ctx.arc(cx, cy, rad * (0.5 + (1 - rg.t) * 1.4), 0, Math.PI * 2);
+    ctx.strokeStyle = rg.c;
+    ctx.globalAlpha = rg.t;
+    ctx.lineWidth = rg.lw;
     ctx.stroke();
     ctx.globalAlpha = 1;
+  }
+
+  // fullscreen flash tint
+  if (flashFx) {
+    flashFx.a -= dt * 1.6;
+    if (flashFx.a <= 0) flashFx = null;
+    else {
+      ctx.fillStyle = `rgba(${flashFx.c},${flashFx.a})`;
+      ctx.fillRect(-20, -20, W + 40, H + 40);
+    }
   }
 
   ctx.restore();
@@ -576,8 +718,19 @@ function beep(freq, dur, type, vol) {
     o.stop(AC.currentTime + dur);
   } catch (e) { /* audio unavailable — fine */ }
 }
+const PENTA = [0, 2, 4, 7, 9];
 const sfx = {
   click: () => beep(660, 0.07, 'square', 0.04),
+  tap: combo => {
+    const st = PENTA[(combo - 1) % 5] + 12 * Math.min(2, Math.floor((combo - 1) / 5));
+    beep(392 * Math.pow(2, st / 12), 0.07, 'square', 0.045);
+  },
+  buyTone: key => {
+    const f = { dynamo: 494, turbine: 392, cooler: 659, injector: 587 }[key] || 520;
+    beep(f, 0.09, 'triangle', 0.06);
+    setTimeout(() => beep(f * 1.5, 0.08, 'triangle', 0.05), 70);
+  },
+  chime: () => { beep(880, 0.12); setTimeout(() => beep(1318, 0.2), 100); },
   vent: () => beep(220, 0.25, 'sawtooth', 0.05),
   draft: () => { beep(440, 0.12); setTimeout(() => beep(660, 0.12), 110); },
   pick: () => { beep(523, 0.1); setTimeout(() => beep(784, 0.15), 90); },
@@ -599,12 +752,17 @@ function frame(now) {
     alarmAcc += dt;
     if (alarmAcc > 0.5) { alarmAcc = 0; sfx.alarm(); }
   }
+  if (S && S.ending && !S.endShown) {
+    S.endT += dt;
+    if (S.endT > 1.2) { S.endShown = true; show('end-panel'); }
+  }
   if (S) renderHUD(calc());
   drawRift(dt);
   requestAnimationFrame(frame);
 }
 
 $id('jolt').addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
+cv.addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
 $id('vent').addEventListener('pointerdown', e => { if (e.button) return; vent(e); });
 
 // block pinch-zoom, double-tap zoom and long-press menus
