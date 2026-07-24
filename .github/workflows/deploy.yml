@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: gh-pages
@@ -24,3 +25,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Publish to gh-pages branch
         run: git push --force origin HEAD:refs/heads/gh-pages
+      - name: Enable Pages if not yet enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" --silent 2>/dev/null; then
+            echo "Pages already enabled — build will trigger from the gh-pages push."
+          else
+            echo "Pages not enabled; attempting to enable (legacy build from gh-pages)..."
+            if gh api -X POST "repos/${{ github.repository }}/pages" \
+                 -f "source[branch]=gh-pages" -f "source[path]=/"; then
+              echo "Pages enabled successfully."
+            else
+              echo "::warning::Could not enable Pages with the workflow token."
+              echo "::warning::One-time manual step: Settings → Pages → Source 'Deploy from a branch' → branch 'gh-pages' → '/ (root)' → Save."
+            fi
+          fi
