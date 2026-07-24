@@ -22,6 +22,7 @@ html, body {
   touch-action: manipulation;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #app {
@@ -113,16 +114,18 @@ html, body {
   font-size: 11px; letter-spacing: 1px;
   text-shadow: 0 1px 2px rgba(0,0,0,.8);
 }
+.bar-label .gi { font-size: 13px; }
+.heatbar .bar-label .gi { color: var(--heat); }
+.chargebar .bar-label .gi { color: var(--charge); }
 #heatnet, #chargerate { color: var(--dim); }
 
 /* ---------- actions ---------- */
 #actions { display: flex; gap: 8px; padding: 6px 12px; }
 .action-btn {
   flex: 1;
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-}
-.action-btn .a-title { display: inline-flex; align-items: center; gap: 6px; }
-.action-btn {
+  position: relative;
+  overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
   background: var(--panel2);
   border: 1px solid #33335c;
   color: var(--text);
@@ -133,11 +136,22 @@ html, body {
   padding: 12px 8px;
   border-radius: 10px;
   cursor: pointer;
+  transition: transform .06s;
 }
-.action-btn small { font-weight: 400; font-size: 11px; color: var(--dim); }
-.action-btn:active { transform: scale(.97); background: #22224a; }
-.action-btn.vent { border-color: #5c3333; }
-.action-btn:disabled { opacity: .4; }
+.action-btn .a-icon { font-size: 26px; }
+.action-btn small { font-weight: 700; font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 2px; }
+.action-btn:active { transform: scale(.9); background: #22224a; }
+.action-btn.vent { border-color: #5c3333; color: #ffb0a5; }
+.action-btn:disabled { opacity: .45; }
+.action-btn .cd {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0%;
+  background: rgba(255, 92, 77, .16);
+  pointer-events: none;
+}
+.action-btn.ready { animation: readypulse .45s; }
+@keyframes readypulse {
+  50% { box-shadow: 0 0 18px rgba(92,255,157,.55); border-color: var(--good); transform: scale(1.04); }
+}
 
 /* ---------- shop ---------- */
 #shop {
@@ -156,14 +170,35 @@ html, body {
   padding: 10px;
   cursor: pointer;
   display: flex; flex-direction: column; gap: 3px;
+  transition: transform .06s, border-color .25s, box-shadow .25s;
 }
-.shop-btn:active { background: var(--panel2); }
+.shop-btn:active { background: var(--panel2); transform: scale(.94); }
 .shop-btn:disabled { opacity: .45; }
+.shop-btn.can { border-color: #45457e; box-shadow: 0 0 12px rgba(124,92,255,.18); }
+.s-count.bump { display: inline-block; animation: bump .35s; }
+@keyframes bump { 40% { transform: scale(1.6); color: var(--good); } }
 .shop-btn .s-name { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 5px; }
 .shop-btn .s-name .gi { color: var(--accent); font-size: 15px; }
 .shop-btn .s-count { color: var(--accent); }
 .shop-btn .s-effect { font-size: 11px; color: var(--dim); }
 .shop-btn .s-cost { font-size: 12px; color: var(--energy); }
+
+/* ---------- floating popups ---------- */
+.float {
+  position: fixed;
+  z-index: 60;
+  font-weight: 700;
+  font-size: 17px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  text-shadow: 0 1px 4px rgba(0,0,0,.9);
+  animation: floatup .8s ease-out forwards;
+  display: inline-flex; align-items: center; gap: 2px;
+  white-space: nowrap;
+}
+@keyframes floatup {
+  to { transform: translate(-50%, -180%); opacity: 0; }
+}
 
 /* ---------- overlays ---------- */
 .overlay {
@@ -224,7 +259,8 @@ html, body {
   font-family: inherit;
   width: 100%;
 }
-.card:active { border-color: var(--accent); background: #1d1d3d; }
+.card { transition: transform .06s; }
+.card:active { border-color: var(--accent); background: #1d1d3d; transform: scale(.97); }
 .card .c-top { display: flex; align-items: center; gap: 8px; }
 .card .c-name { font-size: 14px; font-weight: 700; }
 .card .c-tags { margin-left: auto; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }

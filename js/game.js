@@ -14,10 +14,10 @@ const VENT_AMOUNT = 20;
 const VENT_CD = 8;
 
 const MACHINES = {
-  dynamo:   { name: 'Dynamo',   icon: 'dynamo',   base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5 [bolt]/s · +0.35 heat/s' },
-  turbine:  { name: 'Turbine',  icon: 'turbine',  base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10 [bolt]/s · +2.2 heat/s' },
-  cooler:   { name: 'Cooler',   icon: 'cooler',   base: 60,  growth: 1.16, cool: 3,               desc: '−3 heat/s' },
-  injector: { name: 'Injector', icon: 'injector', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: 'channels 6 [bolt]/s into rift · +0.9 heat/s' },
+  dynamo:   { name: 'Dynamo',   icon: 'dynamo',   base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
+  turbine:  { name: 'Turbine',  icon: 'turbine',  base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10[bolt] +2.2[flame]' },
+  cooler:   { name: 'Cooler',   icon: 'cooler',   base: 60,  growth: 1.16, cool: 3,               desc: '−3[flame]' },
+  injector: { name: 'Injector', icon: 'injector', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: '6[bolt]→[rift] +0.9[flame]' },
 };
 
 // replace [bolt]-style tokens with inline icons
@@ -32,20 +32,20 @@ const TAGS = {
 
 // Cards can reference tag counts → visible synergies.
 const CARDS = [
-  { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: 'Dynamos produce +100% energy but +50% heat.' },
-  { id: 'redline',   name: 'Redline Protocol', tags: ['OVER'], desc: 'All energy production +6% per 10 current heat.', syn: 'Loves running hot — pairs with Cryo control.' },
-  { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: 'Turbines produce +75% energy.' },
-  { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4 [bolt]/s per point of current heat.', syn: 'Heat becomes fuel.' },
-  { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: 'Coolers are +80% effective.' },
-  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: 'Venting grants 15[bolt] per point of heat vented.', syn: 'Turns the Vent button into a generator.' },
-  { id: 'deepfreeze',name: 'Deep Freeze', tags: ['CRYO'], desc: 'Passive heat dissipation +2/s.' },
-  { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: 'Injectors channel +80% faster.' },
-  { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: 'Rift charges +12% faster per [flux] FLUX card you own.', syn: 'Scales with every Flux pick.' },
-  { id: 'coldfusion',name: 'Cold Fusion', tags: ['CRYO', 'FLUX'], desc: 'While heat is below 40: rift charges +50% faster.', syn: 'Rewards a deep Cryo build.' },
-  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: 'Injectors channel +4 [bolt]/s each, but emit +0.5 heat/s each.' },
-  { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Automatically buys a Dynamo every 6s when affordable.' },
-  { id: 'servovent', name: 'Servo Vents', tags: ['AUTO'], desc: 'Automatically vents 12 heat when heat exceeds 75 (every 9s).' },
-  { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: 'All energy production +15% per [cog] AUTO card you own.', syn: 'Scales with every Auto pick.' },
+  { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: 'Dynamos +100%[bolt], +50%[flame]' },
+  { id: 'redline',   name: 'Redline Protocol', tags: ['OVER'], desc: '+6%[bolt] per 10 current [flame]', syn: 'Loves running hot.' },
+  { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: 'Turbines +75%[bolt]' },
+  { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4[bolt]/s per current [flame]', syn: 'Heat becomes fuel.' },
+  { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: 'Coolers +80% effective' },
+  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: 'Vent grants 15[bolt] per [flame] vented', syn: 'Vent becomes a generator.' },
+  { id: 'deepfreeze',name: 'Deep Freeze', tags: ['CRYO'], desc: 'Passive cooling +2[flame]/s' },
+  { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: 'Injectors +80% faster' },
+  { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: '+12% charge per [flux] card', syn: 'Scales with every Flux pick.' },
+  { id: 'coldfusion',name: 'Cold Fusion', tags: ['CRYO', 'FLUX'], desc: '[flame] below 40: charge +50%', syn: 'Rewards a cool forge.' },
+  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: 'Injectors +4[bolt] but +0.5[flame] each' },
+  { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Auto-buys a Dynamo every 6s' },
+  { id: 'servovent', name: 'Servo Vents', tags: ['AUTO'], desc: 'Auto-vents 12[flame] above 75' },
+  { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: '+15%[bolt] per [cog] card', syn: 'Scales with every Auto pick.' },
 ];
 
 // Draft triggers, checked in order. First two fire off lifetime energy earned,
@@ -173,14 +173,38 @@ function tick(dt) {
   }
 }
 
+// ---------- juice ----------
+function popup(x, y, html, color) {
+  const el = document.createElement('div');
+  el.className = 'float';
+  el.innerHTML = html;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  if (color) el.style.color = color;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 850);
+}
+function popAt(e, el, html, color) {
+  // prefer tap point; fall back to the element's center
+  let x = e && e.clientX, y = e && e.clientY;
+  if (!x && el) { const r = el.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
+  popup(x, y, html, color);
+}
+const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (err) { /* unsupported */ } };
+
 // ---------- actions ----------
-function buy(key, silent) {
+function buy(key, silent, e) {
   const c = cost(key);
   if (S.energy < c) return;
   S.energy -= c;
   S.counts[key]++;
-  if (!silent) sfx.click();
-  renderShop();
+  if (!silent) {
+    sfx.click();
+    buzz(15);
+    popAt(e, $id('shop-' + key), '+1' + icon(MACHINES[key].icon), 'var(--accent)');
+    fx.burst();
+  }
+  renderShop(key);
 }
 
 function doVent(amount) {
@@ -193,21 +217,30 @@ function doVent(amount) {
   }
 }
 
-function jolt() {
+function jolt(e) {
   if (S.paused || S.over) return;
   const amt = calc().joltAmt;
   S.energy += amt;
   S.earned += amt;
   S.jolts++;
   sfx.click();
+  buzz(8);
+  popAt(e, $id('jolt'), '+' + fmt(amt) + icon('bolt'), 'var(--energy)');
   fx.burst();
 }
 
-function vent() {
+function vent(e) {
   if (S.paused || S.over || S.ventCd > 0) return;
+  const before = S.heat;
   doVent(VENT_AMOUNT);
+  const vented = before - S.heat;
   S.ventCd = VENT_CD;
   sfx.vent();
+  buzz(20);
+  popAt(e, $id('vent'), '−' + Math.round(vented) + icon('flame'), 'var(--charge)');
+  if (has('recycler') && vented > 0) {
+    setTimeout(() => popAt(null, $id('vent'), '+' + fmt(vented * 15) + icon('bolt'), 'var(--energy)'), 150);
+  }
   fx.pulse('#8ad8ff');
 }
 
@@ -247,6 +280,8 @@ function pickCard(id) {
   hideOverlay();
   S.paused = false;
   sfx.pick();
+  buzz(25);
+  popup(window.innerWidth / 2, window.innerHeight / 2, icon('sparkles') + ' ' + CARDS.find(c => c.id === id).name, 'var(--good)');
   renderChips();
   renderShop();
 }
@@ -255,12 +290,12 @@ function pickCard(id) {
 function endStats() {
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
   return `
-    <div>Run time <span>${mins}:${String(secs).padStart(2, '0')}</span></div>
-    <div>Total energy generated <span>${fmt(S.earned)}${icon('bolt')}</span></div>
-    <div>Rift charge <span>${Math.floor(S.charge / GOAL * 100)}%</span></div>
-    <div>Cards drafted <span>${S.cards.length}</span></div>
-    <div>Machines built <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>
-    <div>Heat vented <span>${Math.floor(S.totalVented)}</span></div>`;
+    <div>Time <span>${mins}:${String(secs).padStart(2, '0')}</span></div>
+    <div>${icon('bolt')} generated <span>${fmt(S.earned)}</span></div>
+    <div>${icon('rift')} charge <span>${Math.floor(S.charge / GOAL * 100)}%</span></div>
+    <div>${icon('cards')} cards <span>${S.cards.length}</span></div>
+    <div>${icon('cog')} machines <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>
+    <div>${icon('steam')} vented <span>${Math.floor(S.totalVented)}</span></div>`;
 }
 
 function win() {
@@ -269,7 +304,7 @@ function win() {
   const t = document.getElementById('end-title');
   t.innerHTML = icon('rift') + ' RIFT STABILIZED';
   t.className = 'win';
-  document.getElementById('end-desc').textContent = 'The rift hums, tamed by your machines. Victory.';
+  document.getElementById('end-desc').textContent = 'The rift hums, tamed by your machines.';
   document.getElementById('end-stats').innerHTML = endStats();
   show('end-panel');
 }
@@ -280,13 +315,14 @@ function lose() {
   const t = document.getElementById('end-title');
   t.innerHTML = icon('skull') + ' MELTDOWN';
   t.className = 'lose';
-  document.getElementById('end-desc').textContent = 'The forge ran too hot. The rift collapses and takes everything with it.';
+  document.getElementById('end-desc').textContent = 'The forge ran too hot.';
   document.getElementById('end-stats').innerHTML = endStats();
   show('end-panel');
 }
 
 // ---------- UI ----------
 const $id = id => document.getElementById(id);
+let lastVentCd = 0;
 
 function show(panelId) {
   $id('overlay').classList.remove('hidden');
@@ -302,7 +338,7 @@ function fmt(n) {
   return n >= 100 ? Math.floor(n).toString() : (Math.floor(n * 10) / 10).toString();
 }
 
-function renderShop() {
+function renderShop(bumpKey) {
   const shop = $id('shop');
   if (!shop.dataset.built) {
     shop.dataset.built = '1';
@@ -310,14 +346,14 @@ function renderShop() {
       const b = document.createElement('button');
       b.className = 'shop-btn';
       b.id = 'shop-' + key;
-      b.addEventListener('click', () => buy(key));
+      b.addEventListener('pointerdown', e => { if (e.button) return; buy(key, false, e); });
       shop.appendChild(b);
     }
   }
   for (const [key, m] of Object.entries(MACHINES)) {
     const b = $id('shop-' + key);
     b.innerHTML =
-      `<div class="s-name">${icon(m.icon)} ${m.name} <span class="s-count">×${S.counts[key]}</span></div>` +
+      `<div class="s-name">${icon(m.icon)} ${m.name} <span class="s-count${key === bumpKey ? ' bump' : ''}">×${S.counts[key]}</span></div>` +
       `<div class="s-effect">${iconize(m.desc)}</div>` +
       `<div class="s-cost">${fmt(cost(key))}${icon('bolt')}</div>`;
   }
@@ -356,14 +392,24 @@ function renderHUD(R) {
 
   const ventBtn = $id('vent');
   ventBtn.disabled = S.ventCd > 0;
-  $id('ventinfo').textContent = S.ventCd > 0 ? 'ready in ' + S.ventCd.toFixed(1) + 's' : '−' + VENT_AMOUNT + ' heat';
+  $id('ventcd').style.width = (S.ventCd / VENT_CD * 100) + '%';
+  $id('ventinfo').innerHTML = S.ventCd > 0 ? S.ventCd.toFixed(1) + 's' : '−' + VENT_AMOUNT + icon('flame');
+  if (lastVentCd > 0 && S.ventCd === 0 && !S.paused && !S.over) {
+    ventBtn.classList.add('ready');
+    setTimeout(() => ventBtn.classList.remove('ready'), 500);
+    buzz(10);
+  }
+  lastVentCd = S.ventCd;
 
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
   $id('clock').textContent = mins + ':' + String(secs).padStart(2, '0');
 
   // affordability
   for (const key of Object.keys(MACHINES)) {
-    $id('shop-' + key).disabled = S.energy < cost(key);
+    const b = $id('shop-' + key);
+    const can = S.energy >= cost(key);
+    b.disabled = !can;
+    b.classList.toggle('can', can);
   }
 
   // meltdown warning
@@ -558,8 +604,15 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-$id('jolt').addEventListener('click', jolt);
-$id('vent').addEventListener('click', vent);
+$id('jolt').addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
+$id('vent').addEventListener('pointerdown', e => { if (e.button) return; vent(e); });
+
+// block pinch-zoom, double-tap zoom and long-press menus
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault());
+document.addEventListener('contextmenu', e => e.preventDefault());
 $id('startbtn').addEventListener('click', () => {
   hideOverlay();
   S.paused = false;
