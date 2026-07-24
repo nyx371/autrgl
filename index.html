@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07070f">
+<title>RIFTFORGE</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌀</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <div class="brand">RIFT<span>FORGE</span></div>
+    <div id="tagchips"></div>
+    <div id="clock">0:00</div>
+  </header>
+
+  <div id="canvaswrap">
+    <canvas id="rift"></canvas>
+    <div id="meltwarn" class="hidden">⚠ MELTDOWN IN <span id="meltcount">4.0</span>s — VENT NOW!</div>
+  </div>
+
+  <section id="stats">
+    <div class="statline">
+      <div class="energy-big"><span id="energy">0</span><em>⚡</em></div>
+      <div class="eps"><span id="eps">0</span> ⚡/s</div>
+    </div>
+    <div class="bar heatbar">
+      <div class="bar-fill" id="heatfill"></div>
+      <div class="bar-label">HEAT <span id="heatval">0</span>/100 <span id="heatnet"></span></div>
+    </div>
+    <div class="bar chargebar">
+      <div class="bar-fill" id="chargefill"></div>
+      <div class="bar-label">RIFT CHARGE <span id="chargeval">0%</span> <span id="chargerate"></span></div>
+    </div>
+  </section>
+
+  <section id="actions">
+    <button id="jolt" class="action-btn">JOLT<small id="joltamt">+3⚡</small></button>
+    <button id="vent" class="action-btn vent">VENT<small id="ventinfo">−20 heat</small></button>
+  </section>
+
+  <section id="shop"></section>
+
+  <!-- overlays -->
+  <div id="overlay" class="overlay">
+    <div class="panel" id="intro-panel">
+      <h1>RIFT<span>FORGE</span></h1>
+      <p class="tagline">An automation roguelike.</p>
+      <ul class="rules">
+        <li>⚡ Machines generate energy <b>automatically</b>.</li>
+        <li>🌀 Build <b>Injectors</b> to charge the rift. Reach <b>100%</b> to win.</li>
+        <li>🔥 Everything makes <b>heat</b> — and the rift grows more unstable every minute. Hit 100 heat and you <b>melt down</b>.</li>
+        <li>🃏 At milestones, <b>draft 1 of 3 cards</b>. Tags synergise — stack them.</li>
+      </ul>
+      <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
+    </div>
+
+    <div class="panel hidden" id="draft-panel">
+      <h2>⚡ RIFT SURGE — CHOOSE ONE</h2>
+      <div id="draft-cards"></div>
+    </div>
+
+    <div class="panel hidden" id="end-panel">
+      <h1 id="end-title"></h1>
+      <p id="end-desc"></p>
+      <div id="end-stats"></div>
+      <button class="big-btn" id="restartbtn">NEW RUN</button>
+    </div>
+  </div>
+
+</div>
+<script src="js/game.js"></script>
+</body>
+</html>
