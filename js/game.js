@@ -12,6 +12,7 @@ const AMBIENT_PER_MIN = 0.9;  // instability: +this much heat/s per minute elaps
 const MELT_TIME = 4;          // seconds at max heat before losing
 const VENT_AMOUNT = 20;
 const VENT_CD = 8;
+const HOLD_TIME = 3;         // seconds of press-and-hold to confirm a card pick
 
 const MACHINES = {
   dynamo:   { name: 'Dynamo',   icon: 'dynamo',    base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
@@ -309,12 +310,49 @@ function openDraft() {
       `<div class="c-top"><div class="c-name">${card.name}</div><div class="c-tags">${tags}</div></div>` +
       `<div class="c-desc">${iconize(card.desc)}</div>` +
       (card.syn ? `<div class="c-syn">${icon('sparkles')} ${card.syn}</div>` : '');
-    btn.addEventListener('click', () => {
-      if (pickLock) return;
+    // press-and-hold to confirm — guards against accidental taps
+    const fill = document.createElement('div');
+    fill.className = 'hold-fill';
+    btn.appendChild(fill);
+
+    let raf = 0, t0 = 0, done = false, ticks = 0;
+    const step = now => {
+      if (done) return;
+      const p = Math.min(1, (now - t0) / (HOLD_TIME * 1000));
+      fill.style.width = (p * 100) + '%';
+      const tick = Math.floor(p * 12);
+      if (tick > ticks) { ticks = tick; sfx.hold(p); buzz(4); }
+      if (p >= 1) return finish();
+      raf = requestAnimationFrame(step);
+    };
+    const start = e => {
+      if (pickLock || done) return;
+      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* not captureable */ }
+      btn.classList.add('holding');
+      t0 = performance.now();
+      ticks = 0;
+      buzz(8);
+      raf = requestAnimationFrame(step);
+    };
+    const cancel = () => {
+      if (done) return;
+      cancelAnimationFrame(raf);
+      btn.classList.remove('holding');
+      fill.style.width = '0%';
+    };
+    const finish = () => {
+      done = true;
       pickLock = true;
+      cancelAnimationFrame(raf);
+      fill.style.width = '100%';
+      btn.classList.remove('holding');
       btn.classList.add('picked');
+      buzz(30);
       setTimeout(() => pickCard(card.id), 220);
-    });
+    };
+    btn.addEventListener('pointerdown', e => { if (e.button) return; start(e); });
+    btn.addEventListener('pointerup', cancel);
+    btn.addEventListener('pointercancel', cancel);
     wrap.appendChild(btn);
   });
   show('draft-panel');
@@ -894,6 +932,7 @@ const sfx = {
     setTimeout(() => beep(f * 1.5, 0.08, 'triangle', 0.05), 70);
   },
   chime: () => { beep(880, 0.12); setTimeout(() => beep(1318, 0.2), 100); },
+  hold: p => beep(300 + p * 500, 0.05, 'triangle', 0.03),
   vent: () => beep(220, 0.25, 'sawtooth', 0.05),
   draft: () => { beep(440, 0.12); setTimeout(() => beep(660, 0.12), 110); },
   pick: () => { beep(523, 0.1); setTimeout(() => beep(784, 0.15), 90); },

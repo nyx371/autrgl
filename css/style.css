@@ -307,6 +307,12 @@ html, body {
   box-shadow: 0 0 16px rgba(92,255,157,.45);
   transform: scale(1.05);
 }
+.hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--dim);
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+}
 .card {
   background: var(--panel2);
   border: 1px solid #33335c;
@@ -319,8 +325,22 @@ html, body {
   font-family: inherit;
   width: 100%;
 }
-.card { transition: transform .06s; }
-.card:active { border-color: var(--accent); background: #1d1d3d; transform: scale(.97); }
+.card { transition: transform .06s; position: relative; overflow: hidden; }
+.card:active { border-color: var(--accent); background: #1d1d3d; }
+.card.holding { border-color: var(--accent); transform: scale(.98); }
+
+/* press-and-hold confirm fill */
+.hold-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(124,92,255,.35), rgba(92,255,157,.4));
+  border-right: 2px solid rgba(92,255,157,.7);
+  pointer-events: none;
+  z-index: 0;
+}
+.card:not(.holding) .hold-fill { transition: width .22s ease-out; }
+.card > *:not(.hold-fill) { position: relative; z-index: 1; }
 .card .c-top { display: flex; align-items: center; gap: 8px; }
 .card .c-name { font-size: 14px; font-weight: 700; }
 .card .c-tags { margin-left: auto; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; color: var(--dim); }
