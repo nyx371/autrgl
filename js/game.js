@@ -209,20 +209,28 @@ function popAt(e, el, html, color) {
 const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (err) { /* unsupported */ } };
 
 // ---------- actions ----------
+const MACHINE_COLORS = { dynamo: '#9d7cff', turbine: '#ffd75c', cooler: '#4dd8ff', injector: '#b45cff' };
+const nodePulse = { dynamo: 0, turbine: 0, cooler: 0, injector: 0, vent: 0 };
+
 function buy(key, silent, e) {
   const c = cost(key);
-  if (S.energy < c) return;
+  if (S.energy < c) {
+    if (!silent) {
+      beep(160, 0.12, 'sawtooth', 0.04);
+      buzz(5);
+      popAt(e, cv, fmt(c) + icon('bolt') + '?', 'var(--heat)');
+    }
+    return;
+  }
   S.energy -= c;
   S.counts[key]++;
+  nodePulse[key] = 1;
   if (!silent) {
     sfx.buyTone(key);
     buzz(15);
-    const col = { dynamo: '#7c5cff', turbine: '#ffd75c', cooler: '#4dd8ff', injector: '#b45cff' }[key];
-    popAt(e, $id('shop-' + key), '+1' + icon(MACHINES[key].icon), col);
-    fx.ring(col, 3);
-    fx.burst(col);
+    popAt(e, cv, '+1' + icon(MACHINES[key].icon), MACHINE_COLORS[key]);
+    fx.ring(MACHINE_COLORS[key], 3);
   }
-  renderShop(key);
 }
 
 function doVent(amount) {
@@ -247,7 +255,7 @@ function jolt(e) {
   sfx.tap(S.combo);
   buzz(8);
   const color = S.combo >= 15 ? '#ffffff' : S.combo >= 5 ? '#ffb75c' : 'var(--energy)';
-  popAt(e, $id('jolt'), '+' + fmt(amt) + icon('bolt') + (S.combo >= 5 ? ' ×' + S.combo : ''), color);
+  popAt(e, cv, '+' + fmt(amt) + icon('bolt') + (S.combo >= 5 ? ' ×' + S.combo : ''), color);
   // lightning strike on the rift — at the tap point if the canvas was tapped
   const r = cv.getBoundingClientRect();
   let x, y;
@@ -265,11 +273,12 @@ function vent(e) {
   doVent(VENT_AMOUNT);
   const vented = before - S.heat;
   S.ventCd = VENT_CD;
+  nodePulse.vent = 1;
   sfx.vent();
   buzz(20);
-  popAt(e, $id('vent'), '−' + Math.round(vented) + icon('flame'), 'var(--charge)');
+  popAt(e, cv, '−' + Math.round(vented) + icon('flame'), 'var(--charge)');
   if (has('recycler') && vented > 0) {
-    setTimeout(() => popAt(null, $id('vent'), '+' + fmt(vented * 15) + icon('bolt'), 'var(--energy)'), 150);
+    setTimeout(() => popAt(null, cv, '+' + fmt(vented * 15) + icon('bolt'), 'var(--energy)'), 150);
   }
   fx.steam();
 }
@@ -320,7 +329,6 @@ function pickCard(id) {
   buzz(25);
   popup(window.innerWidth / 2, window.innerHeight / 2, icon('sparkles') + ' ' + CARDS.find(c => c.id === id).name, 'var(--good)');
   renderChips();
-  renderShop();
 }
 
 // ---------- win / lose ----------
@@ -368,7 +376,6 @@ function lose() {
 
 // ---------- UI ----------
 const $id = id => document.getElementById(id);
-let lastVentCd = 0;
 
 function show(panelId) {
   $id('overlay').classList.remove('hidden');
@@ -382,27 +389,6 @@ function fmt(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
   if (n >= 1e4) return (n / 1e3).toFixed(1) + 'k';
   return n >= 100 ? Math.floor(n).toString() : (Math.floor(n * 10) / 10).toString();
-}
-
-function renderShop(bumpKey) {
-  const shop = $id('shop');
-  if (!shop.dataset.built) {
-    shop.dataset.built = '1';
-    for (const key of Object.keys(MACHINES)) {
-      const b = document.createElement('button');
-      b.className = 'shop-btn';
-      b.id = 'shop-' + key;
-      b.addEventListener('pointerdown', e => { if (e.button) return; buy(key, false, e); });
-      shop.appendChild(b);
-    }
-  }
-  for (const [key, m] of Object.entries(MACHINES)) {
-    const b = $id('shop-' + key);
-    b.innerHTML =
-      `<div class="s-name">${icon(m.icon)} ${m.name} <span class="s-count${key === bumpKey ? ' bump' : ''}">×${S.counts[key]}</span></div>` +
-      `<div class="s-effect">${iconize(m.desc)}</div>` +
-      `<div class="s-cost">${fmt(cost(key))}${icon('bolt')}</div>`;
-  }
 }
 
 function renderChips() {
@@ -421,7 +407,6 @@ function renderChips() {
 function renderHUD(R) {
   $id('energy').textContent = fmt(S.energy);
   $id('eps').textContent = fmt(R.eps);
-  $id('joltamt').innerHTML = '+' + fmt(R.joltAmt) + icon('bolt');
 
   const heatNet = R.heatIn - R.heatOut;
   $id('heatfill').style.width = (S.heat / HEAT_CAP * 100) + '%';
@@ -436,27 +421,8 @@ function renderHUD(R) {
     ? '· ' + fmt(Math.min(R.channel, R.eps) * R.chargeMult) + '/s'
     : '· build Injectors!';
 
-  const ventBtn = $id('vent');
-  ventBtn.disabled = S.ventCd > 0;
-  $id('ventcd').style.width = (S.ventCd / VENT_CD * 100) + '%';
-  $id('ventinfo').innerHTML = S.ventCd > 0 ? S.ventCd.toFixed(1) + 's' : '−' + VENT_AMOUNT + icon('flame');
-  if (lastVentCd > 0 && S.ventCd === 0 && !S.paused && !S.over) {
-    ventBtn.classList.add('ready');
-    setTimeout(() => ventBtn.classList.remove('ready'), 500);
-    buzz(10);
-  }
-  lastVentCd = S.ventCd;
-
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
   $id('clock').textContent = mins + ':' + String(secs).padStart(2, '0');
-
-  // affordability
-  for (const key of Object.keys(MACHINES)) {
-    const b = $id('shop-' + key);
-    const can = S.energy >= cost(key);
-    b.disabled = !can;
-    b.classList.toggle('can', can);
-  }
 
   document.querySelector('.heatbar').classList.toggle('crit', S.heat > 85 && !S.over);
 
@@ -490,7 +456,7 @@ const particles = [];
 const arcs = [];   // lightning bolts: origin point, decaying life
 const rings = [];  // expanding feedback rings
 let flashFx = null; // fullscreen tint: { c: 'r,g,b', a }
-let spawnAcc = 0, emberAcc = 0;
+let spawnAcc = 0, emberAcc = 0, chanAcc = 0, frostAcc = 0;
 
 function spawn(x, y, vx, vy, life, c, mode, size) {
   if (particles.length > 400) return;
@@ -532,6 +498,126 @@ const fx = {
     }
   },
 };
+
+// ---- world nodes: machines + vent live inside the canvas ----
+const NODE_ORDER = ['cooler', 'injector', 'dynamo', 'turbine'];
+function nodeLayout() {
+  const r = Math.max(24, Math.min(32, Math.min(W, H) * 0.08));
+  return {
+    cooler:   { x: W * 0.15, y: H * 0.15, r },
+    injector: { x: W * 0.85, y: H * 0.15, r },
+    dynamo:   { x: W * 0.15, y: H * 0.80, r },
+    turbine:  { x: W * 0.85, y: H * 0.80, r },
+    vent:     { x: W * 0.50, y: H * 0.90, r: r * 0.9 },
+  };
+}
+
+const iconPaths = {};
+function pathsFor(name) {
+  if (!iconPaths[name]) {
+    iconPaths[name] = [...ICONS[name].matchAll(/ d="([^"]+)"/g)].map(m => new Path2D(m[1]));
+  }
+  return iconPaths[name];
+}
+function drawIcon(name, x, y, size, color, alpha) {
+  ctx.save();
+  ctx.translate(x - size / 2, y - size / 2);
+  ctx.scale(size / 512, size / 512);
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  for (const path of pathsFor(name)) ctx.fill(path);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function hitNode(x, y) {
+  const L = nodeLayout();
+  for (const key of [...NODE_ORDER, 'vent']) {
+    const n = L[key];
+    if (Math.hypot(x - n.x, y - n.y) < n.r * 1.45) return key;
+  }
+  return null;
+}
+
+let prevVentCd = 0, ventFlash = 0;
+function drawNodes(dt, t) {
+  const L = nodeLayout();
+  const active = !S.paused && !S.over;
+
+  for (const key of NODE_ORDER) {
+    const n = L[key], m = MACHINES[key];
+    nodePulse[key] = Math.max(0, nodePulse[key] - dt * 3);
+    const sc = 1 + nodePulse[key] * 0.3;
+    const can = active && S.energy >= cost(key);
+    const col = MACHINE_COLORS[key];
+
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.r * sc, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(16,16,31,0.85)';
+    ctx.fill();
+    if (can) {
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 10 + Math.sin(t * 5) * 5;
+    }
+    ctx.strokeStyle = can ? col : '#2a2a45';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    drawIcon(m.icon, n.x, n.y, n.r * 1.1 * sc, can ? col : '#4a4a6e');
+
+    // count badge
+    if (S.counts[key] > 0) {
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#e8e8f5';
+      ctx.fillText('×' + S.counts[key], n.x, n.y - n.r - 6);
+    }
+    // cost
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = can ? '#ffd75c' : '#55557a';
+    const label = fmt(cost(key));
+    ctx.fillText(label, n.x - 5, n.y + n.r + 15);
+    drawIcon('bolt', n.x + ctx.measureText(label).width / 2 + 1, n.y + n.r + 11, 11, can ? '#ffd75c' : '#55557a');
+  }
+
+  // vent port
+  const v = L.vent;
+  nodePulse.vent = Math.max(0, nodePulse.vent - dt * 3);
+  const vsc = 1 + nodePulse.vent * 0.3;
+  const ready = active && S.ventCd <= 0;
+  if (prevVentCd > 0 && S.ventCd <= 0 && active) { ventFlash = 1; buzz(10); }
+  prevVentCd = S.ventCd;
+  ventFlash = Math.max(0, ventFlash - dt * 2.5);
+
+  ctx.beginPath();
+  ctx.arc(v.x, v.y, v.r * vsc, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(16,16,31,0.85)';
+  ctx.fill();
+  if (ready) {
+    ctx.shadowColor = S.heat > 70 ? '#5cff9d' : '#8ad8ff';
+    ctx.shadowBlur = 8 + Math.sin(t * 5) * 4 + ventFlash * 14;
+  }
+  ctx.strokeStyle = ready ? (S.heat > 70 ? '#5cff9d' : '#8ad8ff') : '#2a2a45';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  drawIcon('steam', v.x, v.y, v.r * 1.1 * vsc, ready ? '#8ad8ff' : '#4a4a6e');
+  if (S.ventCd > 0) {
+    // cooldown sweep
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, v.r + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - S.ventCd / VENT_CD));
+    ctx.strokeStyle = '#8ad8ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  } else {
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8ad8ff';
+    ctx.fillText('−' + VENT_AMOUNT, v.x, v.y + v.r + 14);
+  }
+}
 
 function jagged(x1, y1, x2, y2, alpha) {
   const segs = 7, dx = x2 - x1, dy = y2 - y1;
@@ -629,15 +715,34 @@ function drawRift(dt) {
     jagged(a.x, a.y, cx, cy, a.t / a.max);
   }
 
-  // ambient particles: spawn rate follows production — automation made visible
+  // production particles stream from the machines that make them
   if (!S.paused && !S.over) {
+    const L = nodeLayout();
     spawnAcc += dt * Math.min(50, 2 + R.eps * 0.35);
+    const turbShare = S.counts.turbine > 0
+      ? (S.counts.turbine * MACHINES.turbine.eps) / Math.max(1, S.counts.turbine * MACHINES.turbine.eps + S.counts.dynamo * MACHINES.dynamo.eps)
+      : 0;
     while (spawnAcc >= 1) {
       spawnAcc--;
-      const a = Math.random() * Math.PI * 2;
-      const d = rad * (1.4 + Math.random() * 0.8);
-      spawn(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 0, 0, 2.2,
+      const src = L[Math.random() < turbShare ? 'turbine' : 'dynamo'];
+      spawn(src.x + (Math.random() - .5) * 18, src.y + (Math.random() - .5) * 18, 0, 0, 2.2,
         Math.random() < heatFrac * 0.6 ? '#ff5c4d' : '#ffd75c', 'seek');
+    }
+    if (channeling) {
+      chanAcc += dt * Math.min(20, 3 + S.counts.injector * 2);
+      while (chanAcc >= 1) {
+        chanAcc--;
+        const src = L.injector;
+        spawn(src.x + (Math.random() - .5) * 14, src.y + (Math.random() - .5) * 14, 0, 0, 1.6, '#4dd8ff', 'seek');
+      }
+    }
+    if (S.counts.cooler > 0) {
+      frostAcc += dt * Math.min(8, 1 + S.counts.cooler * 0.5);
+      while (frostAcc >= 1) {
+        frostAcc--;
+        const src = L.cooler;
+        spawn(src.x + (Math.random() - .5) * 20, src.y + 6, (Math.random() - .5) * 12, -(15 + Math.random() * 25), 1.4, '#bfe9ff', 'out', 2);
+      }
     }
     // embers rise as the forge overheats
     if (S.heat > 55) {
@@ -672,6 +777,8 @@ function drawRift(dt) {
     ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
   }
   ctx.globalAlpha = 1;
+
+  drawNodes(dt, t);
 
   // feedback rings
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -761,9 +868,14 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-$id('jolt').addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
-cv.addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
-$id('vent').addEventListener('pointerdown', e => { if (e.button) return; vent(e); });
+cv.addEventListener('pointerdown', e => {
+  if (e.button || !S || S.paused || S.over) return;
+  const r = cv.getBoundingClientRect();
+  const key = hitNode(e.clientX - r.left, e.clientY - r.top);
+  if (key === 'vent') return vent(e);
+  if (key) return buy(key, false, e);
+  jolt(e);
+});
 
 // block pinch-zoom, double-tap zoom, long-press menus and the iOS text magnifier.
 // Game controls fire on pointerdown (dispatched before touchstart's default),
@@ -784,7 +896,6 @@ $id('startbtn').addEventListener('click', () => {
 });
 $id('restartbtn').addEventListener('click', () => {
   newRun();
-  renderShop();
   renderChips();
   hideOverlay();
   S.paused = false;
@@ -799,7 +910,6 @@ document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURICompo
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#7c5cff">${ICONS.rift}</svg>`);
 
 newRun();
-renderShop();
 renderChips();
 show('intro-panel');
 resize();
