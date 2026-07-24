@@ -23,12 +23,13 @@ It's static files. Open `index.html` in a browser, or:
 python3 -m http.server
 ```
 
-Deploys to GitHub Pages via `.github/workflows/deploy.yml` on push.
+Deploys to GitHub Pages via `.github/workflows/deploy.yml`: on push, the workflow force-pushes the site to the `gh-pages` branch, which Pages serves (legacy branch deploy).
 
 ## Structure
 
 - `index.html` — layout, overlays (intro / draft / end screens)
 - `css/style.css` — mobile-first dark UI
+- `js/icons.js` — inline SVG icons from [game-icons.net](https://game-icons.net) (Lorc, Delapouite & contributors, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/))
 - `js/game.js` — game state, tick loop, card definitions, canvas rendering, tiny WebAudio sfx
 
 All tuning constants (goal, heat cap, machine stats, card pool, draft triggers) live at the top of `js/game.js`.

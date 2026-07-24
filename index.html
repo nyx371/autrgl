@@ -5,27 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#07070f">
 <title>RIFTFORGE</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌀</text></svg>">
+<link rel="icon" id="favicon" href="">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="app">
 
   <header id="topbar">
-    <div class="brand">RIFT<span>FORGE</span></div>
+    <div class="brand"><i data-icon="rift" class="brand-icon"></i>RIFT<span>FORGE</span></div>
     <div id="tagchips"></div>
     <div id="clock">0:00</div>
   </header>
 
   <div id="canvaswrap">
     <canvas id="rift"></canvas>
-    <div id="meltwarn" class="hidden">⚠ MELTDOWN IN <span id="meltcount">4.0</span>s — VENT NOW!</div>
+    <div id="meltwarn" class="hidden"><i data-icon="hazard"></i> MELTDOWN IN <span id="meltcount">4.0</span>s — VENT NOW!</div>
   </div>
 
   <section id="stats">
     <div class="statline">
-      <div class="energy-big"><span id="energy">0</span><em>⚡</em></div>
-      <div class="eps"><span id="eps">0</span> ⚡/s</div>
+      <div class="energy-big"><span id="energy">0</span><i data-icon="bolt"></i></div>
+      <div class="eps"><span id="eps">0</span> <i data-icon="bolt"></i>/s</div>
     </div>
     <div class="bar heatbar">
       <div class="bar-fill" id="heatfill"></div>
@@ -38,8 +38,8 @@
   </section>
 
   <section id="actions">
-    <button id="jolt" class="action-btn">JOLT<small id="joltamt">+3⚡</small></button>
-    <button id="vent" class="action-btn vent">VENT<small id="ventinfo">−20 heat</small></button>
+    <button id="jolt" class="action-btn"><span class="a-title"><i data-icon="jolt"></i> JOLT</span><small id="joltamt">+3</small></button>
+    <button id="vent" class="action-btn vent"><span class="a-title"><i data-icon="steam"></i> VENT</span><small id="ventinfo">−20 heat</small></button>
   </section>
 
   <section id="shop"></section>
@@ -50,16 +50,17 @@
       <h1>RIFT<span>FORGE</span></h1>
       <p class="tagline">An automation roguelike.</p>
       <ul class="rules">
-        <li>⚡ Machines generate energy <b>automatically</b>.</li>
-        <li>🌀 Build <b>Injectors</b> to charge the rift. Reach <b>100%</b> to win.</li>
-        <li>🔥 Everything makes <b>heat</b> — and the rift grows more unstable every minute. Hit 100 heat and you <b>melt down</b>.</li>
-        <li>🃏 At milestones, <b>draft 1 of 3 cards</b>. Tags synergise — stack them.</li>
+        <li><i data-icon="bolt" class="li-icon c-energy"></i>Machines generate energy <b>automatically</b>.</li>
+        <li><i data-icon="rift" class="li-icon c-charge"></i>Build <b>Injectors</b> to charge the rift. Reach <b>100%</b> to win.</li>
+        <li><i data-icon="flame" class="li-icon c-heat"></i>Everything makes <b>heat</b> — and the rift grows more unstable every minute. Hit 100 heat and you <b>melt down</b>.</li>
+        <li><i data-icon="cards" class="li-icon c-accent"></i>At milestones, <b>draft 1 of 3 cards</b>. Tags synergise — stack them.</li>
       </ul>
       <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
+      <p class="credits">Icons by <b>game-icons.net</b> (Lorc, Delapouite &amp; contributors), CC BY 3.0</p>
     </div>
 
     <div class="panel hidden" id="draft-panel">
-      <h2>⚡ RIFT SURGE — CHOOSE ONE</h2>
+      <h2><i data-icon="cards"></i> RIFT SURGE — CHOOSE ONE</h2>
       <div id="draft-cards"></div>
     </div>
 
@@ -72,6 +73,7 @@
   </div>
 
 </div>
+<script src="js/icons.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

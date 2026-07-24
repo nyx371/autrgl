@@ -14,17 +14,20 @@ const VENT_AMOUNT = 20;
 const VENT_CD = 8;
 
 const MACHINES = {
-  dynamo:   { name: 'Dynamo',   icon: '⚙️', base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5 ⚡/s · +0.35 heat/s' },
-  turbine:  { name: 'Turbine',  icon: '🌪️', base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10 ⚡/s · +2.2 heat/s' },
-  cooler:   { name: 'Cooler',   icon: '❄️', base: 60,  growth: 1.16, cool: 3,               desc: '−3 heat/s' },
-  injector: { name: 'Injector', icon: '🌀', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: 'channels 6 ⚡/s → rift · +0.9 heat/s' },
+  dynamo:   { name: 'Dynamo',   icon: 'dynamo',   base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5 [bolt]/s · +0.35 heat/s' },
+  turbine:  { name: 'Turbine',  icon: 'turbine',  base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10 [bolt]/s · +2.2 heat/s' },
+  cooler:   { name: 'Cooler',   icon: 'cooler',   base: 60,  growth: 1.16, cool: 3,               desc: '−3 heat/s' },
+  injector: { name: 'Injector', icon: 'injector', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: 'channels 6 [bolt]/s into rift · +0.9 heat/s' },
 };
 
+// replace [bolt]-style tokens with inline icons
+const iconize = str => str.replace(/\[(\w+)\]/g, (_, n) => icon(n));
+
 const TAGS = {
-  OVER: { icon: '🔥', name: 'Overclock' },
-  CRYO: { icon: '❄️', name: 'Cryo' },
-  FLUX: { icon: '🌀', name: 'Flux' },
-  AUTO: { icon: '⚙️', name: 'Auto' },
+  OVER: { icon: 'flame', name: 'Overclock' },
+  CRYO: { icon: 'snowflake', name: 'Cryo' },
+  FLUX: { icon: 'flux', name: 'Flux' },
+  AUTO: { icon: 'cog', name: 'Auto' },
 };
 
 // Cards can reference tag counts → visible synergies.
@@ -32,17 +35,17 @@ const CARDS = [
   { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: 'Dynamos produce +100% energy but +50% heat.' },
   { id: 'redline',   name: 'Redline Protocol', tags: ['OVER'], desc: 'All energy production +6% per 10 current heat.', syn: 'Loves running hot — pairs with Cryo control.' },
   { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: 'Turbines produce +75% energy.' },
-  { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4 ⚡/s per point of current heat.', syn: 'Heat becomes fuel.' },
+  { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4 [bolt]/s per point of current heat.', syn: 'Heat becomes fuel.' },
   { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: 'Coolers are +80% effective.' },
-  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: 'Venting grants 15⚡ per point of heat vented.', syn: 'Turns the Vent button into a generator.' },
+  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: 'Venting grants 15[bolt] per point of heat vented.', syn: 'Turns the Vent button into a generator.' },
   { id: 'deepfreeze',name: 'Deep Freeze', tags: ['CRYO'], desc: 'Passive heat dissipation +2/s.' },
   { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: 'Injectors channel +80% faster.' },
-  { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: 'Rift charges +12% faster per 🌀 FLUX card you own.', syn: 'Scales with every Flux pick.' },
+  { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: 'Rift charges +12% faster per [flux] FLUX card you own.', syn: 'Scales with every Flux pick.' },
   { id: 'coldfusion',name: 'Cold Fusion', tags: ['CRYO', 'FLUX'], desc: 'While heat is below 40: rift charges +50% faster.', syn: 'Rewards a deep Cryo build.' },
-  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: 'Injectors channel +4 ⚡/s each, but emit +0.5 heat/s each.' },
+  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: 'Injectors channel +4 [bolt]/s each, but emit +0.5 heat/s each.' },
   { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Automatically buys a Dynamo every 6s when affordable.' },
   { id: 'servovent', name: 'Servo Vents', tags: ['AUTO'], desc: 'Automatically vents 12 heat when heat exceeds 75 (every 9s).' },
-  { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: 'All energy production +15% per ⚙️ AUTO card you own.', syn: 'Scales with every Auto pick.' },
+  { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: 'All energy production +15% per [cog] AUTO card you own.', syn: 'Scales with every Auto pick.' },
 ];
 
 // Draft triggers, checked in order. First two fire off lifetime energy earned,
@@ -227,11 +230,11 @@ function openDraft() {
   draftOffer.forEach(card => {
     const btn = document.createElement('button');
     btn.className = 'card';
-    const tags = card.tags.map(t => TAGS[t].icon + ' ' + TAGS[t].name).join(' · ');
+    const tags = card.tags.map(t => icon(TAGS[t].icon) + ' ' + TAGS[t].name).join(' · ');
     btn.innerHTML =
       `<div class="c-top"><div class="c-name">${card.name}</div><div class="c-tags">${tags}</div></div>` +
-      `<div class="c-desc">${card.desc}</div>` +
-      (card.syn ? `<div class="c-syn">✦ ${card.syn}</div>` : '');
+      `<div class="c-desc">${iconize(card.desc)}</div>` +
+      (card.syn ? `<div class="c-syn">${icon('sparkles')} ${card.syn}</div>` : '');
     btn.addEventListener('click', () => pickCard(card.id));
     wrap.appendChild(btn);
   });
@@ -253,7 +256,7 @@ function endStats() {
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
   return `
     <div>Run time <span>${mins}:${String(secs).padStart(2, '0')}</span></div>
-    <div>Total energy generated <span>${fmt(S.earned)}⚡</span></div>
+    <div>Total energy generated <span>${fmt(S.earned)}${icon('bolt')}</span></div>
     <div>Rift charge <span>${Math.floor(S.charge / GOAL * 100)}%</span></div>
     <div>Cards drafted <span>${S.cards.length}</span></div>
     <div>Machines built <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>
@@ -264,7 +267,7 @@ function win() {
   S.over = true;
   sfx.win();
   const t = document.getElementById('end-title');
-  t.textContent = '🌀 RIFT STABILIZED';
+  t.innerHTML = icon('rift') + ' RIFT STABILIZED';
   t.className = 'win';
   document.getElementById('end-desc').textContent = 'The rift hums, tamed by your machines. Victory.';
   document.getElementById('end-stats').innerHTML = endStats();
@@ -275,7 +278,7 @@ function lose() {
   S.over = true;
   sfx.lose();
   const t = document.getElementById('end-title');
-  t.textContent = '☠ MELTDOWN';
+  t.innerHTML = icon('skull') + ' MELTDOWN';
   t.className = 'lose';
   document.getElementById('end-desc').textContent = 'The forge ran too hot. The rift collapses and takes everything with it.';
   document.getElementById('end-stats').innerHTML = endStats();
@@ -314,9 +317,9 @@ function renderShop() {
   for (const [key, m] of Object.entries(MACHINES)) {
     const b = $id('shop-' + key);
     b.innerHTML =
-      `<div class="s-name">${m.icon} ${m.name} <span class="s-count">×${S.counts[key]}</span></div>` +
-      `<div class="s-effect">${m.desc}</div>` +
-      `<div class="s-cost">${fmt(cost(key))}⚡</div>`;
+      `<div class="s-name">${icon(m.icon)} ${m.name} <span class="s-count">×${S.counts[key]}</span></div>` +
+      `<div class="s-effect">${iconize(m.desc)}</div>` +
+      `<div class="s-cost">${fmt(cost(key))}${icon('bolt')}</div>`;
   }
 }
 
@@ -328,7 +331,7 @@ function renderChips() {
     if (n === 0) continue;
     const chip = document.createElement('span');
     chip.className = 'chip hot';
-    chip.textContent = `${t.icon}${n}`;
+    chip.innerHTML = `${icon(t.icon)}${n}`;
     el.appendChild(chip);
   }
 }
@@ -336,7 +339,7 @@ function renderChips() {
 function renderHUD(R) {
   $id('energy').textContent = fmt(S.energy);
   $id('eps').textContent = fmt(R.eps);
-  $id('joltamt').textContent = '+' + fmt(R.joltAmt) + '⚡';
+  $id('joltamt').innerHTML = '+' + fmt(R.joltAmt) + icon('bolt');
 
   const heatNet = R.heatIn - R.heatOut;
   $id('heatfill').style.width = (S.heat / HEAT_CAP * 100) + '%';
@@ -570,6 +573,13 @@ $id('restartbtn').addEventListener('click', () => {
   S.paused = false;
   sfx.pick();
 });
+
+// inject static icons declared as <i data-icon="..."> in the HTML
+document.querySelectorAll('[data-icon]').forEach(el => {
+  el.outerHTML = icon(el.dataset.icon, el.className);
+});
+document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#7c5cff">${ICONS.rift}</svg>`);
 
 newRun();
 renderShop();
