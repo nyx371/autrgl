@@ -765,7 +765,13 @@ $id('jolt').addEventListener('pointerdown', e => { if (e.button) return; jolt(e)
 cv.addEventListener('pointerdown', e => { if (e.button) return; jolt(e); });
 $id('vent').addEventListener('pointerdown', e => { if (e.button) return; vent(e); });
 
-// block pinch-zoom, double-tap zoom and long-press menus
+// block pinch-zoom, double-tap zoom, long-press menus and the iOS text magnifier.
+// Game controls fire on pointerdown (dispatched before touchstart's default),
+// so cancelling touchstart outside overlay panels is safe; panels keep
+// click + scroll behavior.
+document.addEventListener('touchstart', e => {
+  if (!e.target.closest('.panel')) e.preventDefault();
+}, { passive: false });
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('gesturechange', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
