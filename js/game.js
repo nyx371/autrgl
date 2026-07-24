@@ -12,7 +12,7 @@ const AMBIENT_PER_MIN = 0.9;  // instability: +this much heat/s per minute elaps
 const MELT_TIME = 4;          // seconds at max heat before losing
 const VENT_AMOUNT = 20;
 const VENT_CD = 8;
-const HOLD_TIME = 3;         // seconds of press-and-hold to confirm a card pick
+const HOLD_TIME = 1;         // seconds of press-and-hold to confirm a card pick
 
 const MACHINES = {
   dynamo:   { name: 'Dynamo',   icon: 'dynamo',    base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
@@ -320,7 +320,7 @@ function openDraft() {
       if (done) return;
       const p = Math.min(1, (now - t0) / (HOLD_TIME * 1000));
       fill.style.width = (p * 100) + '%';
-      const tick = Math.floor(p * 12);
+      const tick = Math.floor(p * 6);
       if (tick > ticks) { ticks = tick; sfx.hold(p); buzz(4); }
       if (p >= 1) return finish();
       raf = requestAnimationFrame(step);
