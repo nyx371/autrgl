@@ -15,6 +15,7 @@
     <div class="brand"><i data-icon="rift" class="brand-icon"></i>RIFT<span>FORGE</span></div>
     <div id="tagchips"></div>
     <div id="clock">0:00</div>
+    <button id="statsbtn" class="icon-btn" aria-label="Stats"><i data-icon="stats"></i></button>
     <button id="infobtn" class="icon-btn" aria-label="How to play"><i data-icon="help"></i></button>
   </header>
 
@@ -22,6 +23,8 @@
     <canvas id="rift"></canvas>
     <div id="meltwarn" class="hidden"><i data-icon="hazard"></i>HULL <span id="meltcount">30</span> — DEFEND!</div>
   </div>
+
+  <section id="buildstrip"></section>
 
   <section id="stats">
     <div class="statline">
@@ -46,8 +49,8 @@
       <ul class="rules">
         <li><i data-icon="hazard" class="li-icon c-heat"></i>Enemies swarm in from the edges to eat your Spire.</li>
         <li><i data-icon="jolt" class="li-icon c-energy"></i>Tap enemies to zap them. Chain hits for combos.</li>
-        <li><i data-icon="cog" class="li-icon c-accent"></i>Tap corner nodes to build machines. They fight for you.</li>
-        <li><i data-icon="nova" class="li-icon c-charge"></i>Tap the nova port to blast everything back.</li>
+        <li><i data-icon="cog" class="li-icon"></i>Double-tap the build strip to buy machines. They fight for you.</li>
+        <li><i data-icon="nova" class="li-icon"></i>Tap NOVA to blast everything back.</li>
         <li><i data-icon="cards" class="li-icon c-accent"></i>Survive 10 waves. Draft cards between them.</li>
       </ul>
       <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
@@ -68,6 +71,15 @@
       </div>
       <div id="info-body"></div>
       <button class="big-btn" id="infoback">BACK</button>
+    </div>
+
+    <div class="panel hidden" id="stats-panel">
+      <div class="panel-head">
+        <h2><i data-icon="stats"></i> RUN STATS</h2>
+        <button id="statsclose" class="icon-btn" aria-label="Close"><i data-icon="close"></i></button>
+      </div>
+      <div id="stats-body"></div>
+      <button class="big-btn" id="statsback">BACK</button>
     </div>
 
     <div class="panel hidden" id="end-panel">

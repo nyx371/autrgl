@@ -10,8 +10,8 @@ Defend the Rift Spire at the center of the screen.
 
 - 👾 **Enemies swarm in from the edges** and gnaw the Spire's shield, then its hull. Hull 0 = loss. **Survive 10 waves = win.**
 - ⚡ **Tap enemies to zap them** — chained hits build a combo multiplier up to ×25.
-- ⚙️ **Machines are tappable nodes in the world**: Reactors (income), Turrets (auto-fire), Shield Gens (max shield + regen), Tesla Coils (chain lightning). Energy comes from kills + Reactors.
-- 💥 **The Nova port** blasts and knocks back every enemy on a cooldown — the panic button.
+- ⚙️ **Machines are bought from the build strip** under the battlefield (double-tap to confirm): Reactors (income), Turrets (auto-fire), Shield Gens (max shield + regen), Tesla Coils (chain lightning). Energy comes from kills + Reactors.
+- 💥 **NOVA** (in the strip) blasts and knocks back every enemy on a cooldown — the panic button. A stats menu in the header shows live DPS, defense, and drafted cards.
 - 🃏 **After every wave you draft 1 of 3 cards** (press-and-hold to confirm). Tags — 🔥 Overclock, 🛡 Aegis, ⚡ Storm, ⚙️ Auto — synergise and several cards scale with tag counts, pushing each run toward a build.
 - 👾 **Enemy variety**: darts (fast fodder), splitters (burst into darts on death), brutes (tanks), one gold-ringed **elite** per wave (3× HP, 4× scrap), and **THE MAW** — the wave-10 boss that births darts while it lives.
 - 💎 **Drops**: kills sometimes leave a scrap crystal (⚡) or aegis orb (shield refill) — tap them before they fade, or draft Magnet Drones.

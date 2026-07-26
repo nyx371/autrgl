@@ -78,7 +78,7 @@ function newRun() {
     spawnLeft: 0, spawnT: 0,
     counts: { reactor: 0, turret: 1, shield: 0, tesla: 0 }, // start with 1 turret so the Spire fights back immediately
     cards: [],
-    combo: 0, comboT: 0,
+    combo: 0, comboT: 0, bestCombo: 0,
     novaCd: 0, teslaT: 0, turretAcc: 0, autoT: 0, thornT: 0, hitT: 0,
     od: 0, odT: 0, odReadyPinged: false,
     queue: [],
@@ -268,6 +268,7 @@ function tick(dt) {
 
   // combo decay + cooldowns
   if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
+  if (armedT > 0) { armedT -= dt; if (armedT <= 0) armedKey = null; }
   S.novaCd = Math.max(0, S.novaCd - dt);
   if (S.hitT > 0) S.hitT -= dt;
 
@@ -441,27 +442,26 @@ function popAt(e, el, html, color) {
 const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (err) { /* unsupported */ } };
 
 // ---------- actions ----------
-const nodePulse = { reactor: 0, turret: 0, shield: 0, tesla: 0, nova: 0 };
-
 function buy(key, silent, e) {
   const c = cost(key);
   if (S.energy < c) {
     if (!silent) {
       beep(160, 0.12, 'sawtooth', 0.04);
       buzz(5);
-      popAt(e, cv, fmt(c) + icon('bolt') + '?', 'var(--heat)');
+      popAt(e, $id('bs-' + key), fmt(c) + icon('bolt') + '?', 'var(--heat)');
     }
     return;
   }
   S.energy -= c;
   S.counts[key]++;
-  nodePulse[key] = 1;
   if (key === 'shield') S.shield += 15; // new capacity arrives charged
   if (!silent) {
     sfx.buyTone(key);
     buzz(15);
-    popAt(e, cv, '+1' + icon(MACHINES[key].icon), MACHINE_COLORS[key]);
+    popAt(e, $id('bs-' + key), '+1' + icon(MACHINES[key].icon), MACHINE_COLORS[key]);
     fx.ring(MACHINE_COLORS[key], 3);
+    const cnt = document.querySelector('#bs-' + key + ' .bs-count');
+    if (cnt) { cnt.classList.remove('bump'); void cnt.offsetWidth; cnt.classList.add('bump'); }
   }
 }
 
@@ -479,6 +479,7 @@ function zap(e) {
     return;
   }
   S.combo = Math.min(25, S.combo + 1);
+  S.bestCombo = Math.max(S.bestCombo, S.combo);
   S.comboT = 1.1;
   const mult = 1 + (S.combo - 1) * 0.05;
   const dmg = R.zapDmg * mult;
@@ -499,7 +500,6 @@ function zap(e) {
 function nova(e) {
   if (S.paused || S.over || S.novaCd > 0) return;
   S.novaCd = NOVA_CD;
-  nodePulse.nova = 1;
   const R = calc();
   const cx = W / 2, cy = H / 2;
   fx.flash('140,220,255', 0.3);
@@ -612,6 +612,128 @@ function pickCard(id) {
   renderChips();
 }
 
+// ---------- build strip (double-tap to confirm a purchase) ----------
+let armedKey = null, armedT = 0;
+
+function buildStrip() {
+  const strip = $id('buildstrip');
+  strip.innerHTML = '';
+  for (const [key, m] of Object.entries(MACHINES)) {
+    const b = document.createElement('button');
+    b.className = 'bs-btn';
+    b.id = 'bs-' + key;
+    b.style.setProperty('--mcol', MACHINE_COLORS[key]);
+    b.innerHTML =
+      `<span class="bs-count">×${S.counts[key]}</span>` +
+      icon(m.icon) +
+      `<span class="bs-cost">${fmt(cost(key))}${icon('bolt')}</span>` +
+      `<span class="bs-confirm">AGAIN?</span>`;
+    b.addEventListener('pointerdown', e => {
+      if (e.button || !S || S.paused || S.over) return;
+      if (armedKey === key) {
+        armedKey = null;
+        buy(key, false, e);
+      } else {
+        armedKey = key;
+        armedT = 1.6;
+        beep(520, 0.05, 'triangle', 0.03);
+        buzz(5);
+      }
+    });
+    strip.appendChild(b);
+  }
+  const nb = document.createElement('button');
+  nb.className = 'bs-btn bs-nova';
+  nb.id = 'bs-nova';
+  nb.innerHTML =
+    `<span class="bs-cd" id="bs-nova-cd"></span>` +
+    icon('nova') +
+    `<span class="bs-cost">NOVA</span>`;
+  nb.addEventListener('pointerdown', e => { if (e.button) return; nova(e); });
+  strip.appendChild(nb);
+}
+
+let lastNovaCd = 0;
+function renderStrip() {
+  for (const key of Object.keys(MACHINES)) {
+    const b = $id('bs-' + key);
+    if (!b) continue;
+    const can = !S.paused && !S.over && S.energy >= cost(key);
+    b.classList.toggle('can', can);
+    b.classList.toggle('armed', armedKey === key);
+    b.querySelector('.bs-count').textContent = '×' + S.counts[key];
+    b.querySelector('.bs-cost').innerHTML = fmt(cost(key)) + icon('bolt');
+  }
+  const nb = $id('bs-nova');
+  if (nb) {
+    const ready = S.novaCd <= 0 && !S.paused && !S.over;
+    nb.classList.toggle('can', ready);
+    $id('bs-nova-cd').style.height = (S.novaCd / NOVA_CD * 100) + '%';
+    if (lastNovaCd > 0 && S.novaCd <= 0 && !S.paused && !S.over) {
+      nb.classList.add('ready');
+      setTimeout(() => nb.classList.remove('ready'), 500);
+      buzz(10);
+    }
+    lastNovaCd = S.novaCd;
+  }
+}
+
+// ---------- stats menu ----------
+function buildStats() {
+  const R = calc();
+  const row = (ic, name, val) =>
+    `<div class="info-row">${icon(ic)}<div><b>${name}</b></div><em>${val}</em></div>`;
+  const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
+
+  const cardList = S.cards.length
+    ? S.cards.map(id => {
+        const c = CARDS.find(k => k.id === id);
+        return `<div class="info-row">${icon(TAGS[c.tags[0]].icon)}<div><b>${c.name}</b><span>${iconize(c.desc)}</span></div></div>`;
+      }).join('')
+    : '<p>None yet — clear a wave.</p>';
+
+  $id('stats-body').innerHTML = `
+    <div class="info-sec">
+      <h3>${icon('hazard')} RUN</h3>
+      ${row('hazard', 'Wave', Math.min(S.wave, MAX_WAVE) + '/' + MAX_WAVE + ' · ' + mins + ':' + String(secs).padStart(2, '0'))}
+      ${row('skull', 'Kills', S.kills)}
+      ${row('bolt', 'Energy earned', fmt(S.earned))}
+      ${row('sparkles', 'Best combo', '×' + S.bestCombo)}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('flame')} FIREPOWER</h3>
+      ${row('turret', 'Turret DPS', fmt(R.turretDmg * R.turretRate) + ' (' + fmt(R.turretRate) + '/s × ' + fmt(R.turretDmg) + ')')}
+      ${row('jolt', 'Zap damage', fmt(R.zapDmg) + ' per tap')}
+      ${row('tesla', 'Tesla', S.counts.tesla ? fmt(R.teslaDmg) + ' × ' + R.teslaTargets + ' targets / ' + (3 / S.counts.tesla).toFixed(1) + 's' : '—')}
+      ${row('nova', 'Nova damage', fmt(R.novaDmg))}
+      ${row('flux', 'Overdrive', S.odT > 0 ? 'ACTIVE ' + S.odT.toFixed(1) + 's' : Math.round(S.od) + '%')}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('shield')} DEFENSE</h3>
+      ${row('rift', 'Hull', Math.ceil(S.hull) + '/' + HULL_MAX)}
+      ${row('shield', 'Shield', Math.ceil(S.shield) + '/' + Math.ceil(shieldMax()) + ' · +' + R.regen.toFixed(1) + '/s')}
+      ${row('rift', 'Repair/wave', '+' + (WAVE_REPAIR + (has('fieldrepair') ? 8 : 0)))}
+      ${row('reactor', 'Income', '+' + fmt(R.income) + '/s · kills ×' + R.killMult)}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('cards')} CARDS (${S.cards.length})</h3>
+      ${cardList}
+    </div>`;
+}
+
+let statsResume = false;
+function openStats() {
+  buildStats();
+  statsResume = S && !S.paused && !S.over;
+  if (S) S.paused = true;
+  show('stats-panel');
+}
+function closeStats() {
+  if (statsResume) { hideOverlay(); S.paused = false; }
+  else show(S && S.over ? 'end-panel' : 'intro-panel');
+  statsResume = false;
+}
+
 // ---------- info / legend ----------
 function buildInfo() {
   const row = (ic, name, text) =>
@@ -635,8 +757,8 @@ function buildInfo() {
     <div class="info-sec">
       <h3>${icon('jolt')} CONTROLS</h3>
       ${row('jolt', 'Tap an enemy', 'Zaps it from the Spire. Tap fast to build a combo.')}
-      ${row('cog', 'Tap a corner node', 'Buys that machine. It glows when affordable.')}
-      ${row('nova', 'Tap the Nova port', 'Blasts and knocks back every enemy. ' + NOVA_CD + 's cooldown.')}
+      ${row('cog', 'Double-tap a build button', 'First tap arms it, second tap buys. It glows when affordable.')}
+      ${row('nova', 'Tap NOVA', 'Blasts and knocks back every enemy. ' + NOVA_CD + 's cooldown.')}
     </div>
     <div class="info-sec">
       <h3>${icon('cog')} MACHINES</h3>
@@ -725,7 +847,7 @@ const $id = id => document.getElementById(id);
 
 function show(panelId) {
   $id('overlay').classList.remove('hidden');
-  ['intro-panel', 'draft-panel', 'end-panel', 'info-panel'].forEach(p =>
+  ['intro-panel', 'draft-panel', 'end-panel', 'info-panel', 'stats-panel'].forEach(p =>
     $id(p).classList.toggle('hidden', p !== panelId));
 }
 function hideOverlay() { $id('overlay').classList.add('hidden'); }
@@ -821,19 +943,7 @@ const fx = {
   },
 };
 
-// ---- world nodes ----
-const NODE_ORDER = ['shield', 'tesla', 'reactor', 'turret'];
-function nodeLayout() {
-  const r = Math.max(24, Math.min(32, Math.min(W, H) * 0.08));
-  return {
-    shield:  { x: W * 0.15, y: H * 0.15, r },
-    tesla:   { x: W * 0.85, y: H * 0.15, r },
-    reactor: { x: W * 0.15, y: H * 0.80, r },
-    turret:  { x: W * 0.85, y: H * 0.80, r },
-    nova:    { x: W * 0.50, y: H * 0.90, r: r * 0.9 },
-  };
-}
-
+// canvas rendering of the SVG icon set via Path2D
 const iconPaths = {};
 function pathsFor(name) {
   if (!iconPaths[name]) {
@@ -850,87 +960,6 @@ function drawIcon(name, x, y, size, color, alpha) {
   for (const path of pathsFor(name)) ctx.fill(path);
   ctx.restore();
   ctx.globalAlpha = 1;
-}
-
-function hitNode(x, y) {
-  const L = nodeLayout();
-  for (const key of [...NODE_ORDER, 'nova']) {
-    const n = L[key];
-    if (Math.hypot(x - n.x, y - n.y) < n.r * 1.45) return key;
-  }
-  return null;
-}
-
-let prevNovaCd = 0, novaFlash = 0;
-function drawNodes(dt, t) {
-  const L = nodeLayout();
-  const active = !S.paused && !S.over;
-
-  for (const key of NODE_ORDER) {
-    const n = L[key], m = MACHINES[key];
-    nodePulse[key] = Math.max(0, nodePulse[key] - dt * 3);
-    const sc = 1 + nodePulse[key] * 0.3;
-    const can = active && S.energy >= cost(key);
-    const col = MACHINE_COLORS[key];
-
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r * sc, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(16,16,31,0.85)';
-    ctx.fill();
-    if (can) {
-      ctx.shadowColor = col;
-      ctx.shadowBlur = 10 + Math.sin(t * 5) * 5;
-    }
-    ctx.strokeStyle = can ? col : '#2a2a45';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    drawIcon(m.icon, n.x, n.y, n.r * 1.1 * sc, can ? col : '#4a4a6e');
-
-    if (S.counts[key] > 0) {
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#e8e8f5';
-      ctx.fillText('×' + S.counts[key], n.x, n.y - n.r - 6);
-    }
-    ctx.font = 'bold 11px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = can ? '#ffd75c' : '#55557a';
-    const label = fmt(cost(key));
-    ctx.fillText(label, n.x - 5, n.y + n.r + 15);
-    drawIcon('bolt', n.x + ctx.measureText(label).width / 2 + 1, n.y + n.r + 11, 11, can ? '#ffd75c' : '#55557a');
-  }
-
-  // nova port
-  const v = L.nova;
-  nodePulse.nova = Math.max(0, nodePulse.nova - dt * 3);
-  const vsc = 1 + nodePulse.nova * 0.3;
-  const ready = active && S.novaCd <= 0;
-  if (prevNovaCd > 0 && S.novaCd <= 0 && active) { novaFlash = 1; buzz(10); }
-  prevNovaCd = S.novaCd;
-  novaFlash = Math.max(0, novaFlash - dt * 2.5);
-
-  ctx.beginPath();
-  ctx.arc(v.x, v.y, v.r * vsc, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(16,16,31,0.85)';
-  ctx.fill();
-  if (ready) {
-    ctx.shadowColor = enemies.length > 3 ? '#5cff9d' : '#8ad8ff';
-    ctx.shadowBlur = 8 + Math.sin(t * 5) * 4 + novaFlash * 14;
-  }
-  ctx.strokeStyle = ready ? (enemies.length > 3 ? '#5cff9d' : '#8ad8ff') : '#2a2a45';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  drawIcon('nova', v.x, v.y, v.r * 1.1 * vsc, ready ? '#8ad8ff' : '#4a4a6e');
-  if (S.novaCd > 0) {
-    ctx.beginPath();
-    ctx.arc(v.x, v.y, v.r + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - S.novaCd / NOVA_CD));
-    ctx.strokeStyle = '#8ad8ff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
 }
 
 function jagged(x1, y1, x2, y2, alpha) {
@@ -1152,13 +1181,12 @@ function drawRift(dt) {
     ctx.fillRect(-10, -10, W + 20, H + 20);
   }
 
-  // reactor income made visible: motes drift from the Reactor node to the Spire
+  // reactor income made visible: motes rise from the build strip to the Spire
   if (!S.paused && !S.over && S.counts.reactor > 0) {
     spawnAcc += dt * Math.min(20, 1 + S.counts.reactor);
-    const L = nodeLayout();
     while (spawnAcc >= 1) {
       spawnAcc--;
-      spawn(L.reactor.x + (Math.random() - .5) * 18, L.reactor.y + (Math.random() - .5) * 18, 0, 0, 2.2, '#ffd75c', 'seek');
+      spawn(W * (0.05 + Math.random() * 0.2), H + 4, 0, -30, 2.2, '#ffd75c', 'seek');
     }
   }
 
@@ -1207,7 +1235,6 @@ function drawRift(dt) {
     jagged(a.x, a.y, a.tx, a.ty, a.t / a.max);
   }
 
-  drawNodes(dt, t);
 
   // feedback rings
   for (let i = rings.length - 1; i >= 0; i--) {
@@ -1289,7 +1316,7 @@ function frame(now) {
     S.endT += dt;
     if (S.endT > 1.2) { S.endShown = true; show('end-panel'); }
   }
-  if (S) renderHUD(calc());
+  if (S) { renderHUD(calc()); renderStrip(); }
   drawRift(dt);
   requestAnimationFrame(frame);
 }
@@ -1298,9 +1325,6 @@ cv.addEventListener('pointerdown', e => {
   if (e.button || !S || S.paused || S.over) return;
   const r = cv.getBoundingClientRect();
   const x = e.clientX - r.left, y = e.clientY - r.top;
-  const key = hitNode(x, y);
-  if (key === 'nova') return nova(e);
-  if (key) return buy(key, false, e);
   for (const pk of pickups) {
     if (Math.hypot(pk.x - x, pk.y - y) < 30) return collectPickup(pk);
   }
@@ -1313,7 +1337,7 @@ cv.addEventListener('pointerdown', e => {
 // Game controls fire on pointerdown (dispatched before touchstart's default),
 // so cancelling touchstart outside overlay panels is safe.
 document.addEventListener('touchstart', e => {
-  if (!e.target.closest('.panel')) e.preventDefault();
+  if (!e.target.closest('.panel') || e.target.closest('.card')) e.preventDefault();
 }, { passive: false });
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('gesturechange', e => e.preventDefault());
@@ -1321,6 +1345,9 @@ document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preven
 document.addEventListener('dblclick', e => e.preventDefault());
 document.addEventListener('contextmenu', e => e.preventDefault());
 
+$id('statsbtn').addEventListener('click', openStats);
+$id('statsclose').addEventListener('click', closeStats);
+$id('statsback').addEventListener('click', closeStats);
 $id('infobtn').addEventListener('click', openInfo);
 $id('introinfo').addEventListener('click', openInfo);
 $id('infoclose').addEventListener('click', closeInfo);
@@ -1346,6 +1373,7 @@ document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURICompo
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#7c5cff">${ICONS.rift}</svg>`);
 
 newRun();
+buildStrip();
 renderChips();
 show('intro-panel');
 resize();
