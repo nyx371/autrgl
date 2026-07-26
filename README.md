@@ -13,6 +13,12 @@ Defend the Rift Spire at the center of the screen.
 - ⚙️ **Machines are tappable nodes in the world**: Reactors (income), Turrets (auto-fire), Shield Gens (max shield + regen), Tesla Coils (chain lightning). Energy comes from kills + Reactors.
 - 💥 **The Nova port** blasts and knocks back every enemy on a cooldown — the panic button.
 - 🃏 **After every wave you draft 1 of 3 cards** (press-and-hold to confirm). Tags — 🔥 Overclock, 🛡 Aegis, ⚡ Storm, ⚙️ Auto — synergise and several cards scale with tag counts, pushing each run toward a build.
+- 👾 **Enemy variety**: darts (fast fodder), splitters (burst into darts on death), brutes (tanks), one gold-ringed **elite** per wave (3× HP, 4× scrap), and **THE MAW** — the wave-10 boss that births darts while it lives.
+- 💎 **Drops**: kills sometimes leave a scrap crystal (⚡) or aegis orb (shield refill) — tap them before they fade, or draft Magnet Drones.
+- 🔶 **Overdrive**: kills charge a gold ring around the Spire; when full, tap the Spire for 6s of doubled firepower.
+- 🔧 **Field repair**: a few hull points patched after every cleared wave.
+
+Every symbol keeps one canonical color everywhere it appears (HUD, cards, world, popups) so color alone identifies the concept.
 
 The core tension: spend energy on economy (Reactors) or defense (everything else), zap manually or trust the automation, and pick cards that compound.
 

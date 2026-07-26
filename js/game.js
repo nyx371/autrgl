@@ -17,6 +17,16 @@ const ZAP_RANGE = 70;      // px around the tap that still hits
 const NOVA_DMG = 16;
 const NOVA_CD = 15;
 const HOLD_TIME = 1;       // press-and-hold seconds to confirm a card
+const OD_MAX = 100;        // overdrive charge
+const OD_TIME = 6;         // seconds of overdrive
+const WAVE_REPAIR = 4;     // hull repaired after each cleared wave
+
+const ENEMY_TYPES = {
+  dart:     { hp: 6,   speed: 38, spdVar: 14, dps: 4,  scrap: 3,   size: 7.5, color: '#ff9d4d' },
+  splitter: { hp: 14,  speed: 28, spdVar: 6,  dps: 6,  scrap: 7,   size: 10,  color: '#b45cff' },
+  brute:    { hp: 26,  speed: 21, spdVar: 5,  dps: 9,  scrap: 10,  size: 12,  color: '#ff5c4d' },
+  boss:     { hp: 550, speed: 9,  spdVar: 1,  dps: 22, scrap: 250, size: 26,  color: '#ff2d6d' },
+};
 
 const MACHINES = {
   reactor: { name: 'Reactor',    icon: 'reactor', base: 20,  growth: 1.5,  desc: '+2[bolt]/s income' },
@@ -51,6 +61,9 @@ const CARDS = [
   { id: 'scrap',       name: 'Scrap Magnet',    tags: ['AUTO'],  desc: '+50%[bolt] from kills' },
   { id: 'autoforge',   name: 'Auto-Forge',      tags: ['AUTO'],  desc: 'Every 8s: auto-buys the cheapest machine' },
   { id: 'gridmind',    name: 'Grid Mind',       tags: ['AUTO'],  desc: '+12% all damage per [cog] AUTO card', syn: 'Scales with every Auto pick.' },
+  { id: 'fieldrepair', name: 'Field Repair',    tags: ['AEGIS'], desc: '+8 extra hull repaired after each wave' },
+  { id: 'magnet',      name: 'Magnet Drones',   tags: ['AUTO'],  desc: 'Drops fly to the Spire on their own' },
+  { id: 'odcore',      name: 'Overdrive Core',  tags: ['STORM'], desc: '[flux] Overdrive lasts 4s longer' },
 ];
 
 // ---------- state ----------
@@ -67,11 +80,15 @@ function newRun() {
     cards: [],
     combo: 0, comboT: 0,
     novaCd: 0, teslaT: 0, turretAcc: 0, autoT: 0, thornT: 0, hitT: 0,
+    od: 0, odT: 0, odReadyPinged: false,
+    queue: [],
     ending: null, endT: 0, endShown: false,
     paused: true, over: false,
   };
   enemies.length = 0;
+  pickups.length = 0;
 }
+const pickups = [];
 
 const has = id => S.cards.includes(id);
 const tagCount = tag => S.cards.reduce((n, id) => n + (CARDS.find(c => c.id === id).tags.includes(tag) ? 1 : 0), 0);
@@ -81,16 +98,17 @@ const cost = key => Math.ceil(MACHINES[key].base * Math.pow(MACHINES[key].growth
 function shieldMax() { return BASE_SHIELD + S.counts.shield * 15 + (has('bulwark') ? 40 : 0); }
 
 function calc() {
+  const od = S.odT > 0;
   let dmgMult = 1;
   if (has('gridmind')) dmgMult *= 1 + 0.12 * tagCount('AUTO');
   if (has('capacitor') && S.shield >= shieldMax() - 0.5) dmgMult *= 1.35;
 
-  const turretDmg = 4 * (has('overcharge') ? 1.6 : 1) * dmgMult;
-  const turretRate = S.counts.turret * (has('rapidfire') ? 1.5 : 1);
+  const turretDmg = 4 * (has('overcharge') ? 1.6 : 1) * dmgMult * (od ? 2 : 1);
+  const turretRate = S.counts.turret * (has('rapidfire') ? 1.5 : 1) * (od ? 2 : 1);
 
-  const zapDmg = ZAP_DMG * (has('stormzap') ? 2 : 1) * dmgMult;
+  const zapDmg = ZAP_DMG * (has('stormzap') ? 2 : 1) * dmgMult * (od ? 2 : 1);
 
-  let teslaDmg = 6 * dmgMult;
+  let teslaDmg = 6 * dmgMult * (od ? 1.5 : 1);
   if (has('resonance')) teslaDmg *= 1 + 0.20 * tagCount('STORM');
   const teslaTargets = 2 + (has('chain') ? 2 : 0);
 
@@ -108,28 +126,50 @@ function calc() {
 }
 
 // ---------- enemies ----------
-function waveSize(w) { return 5 + 3 * (w - 1); }
-function bruteCount(w) { return w >= 3 ? Math.floor(w / 2) : 0; }
+function buildWave(w) {
+  const q = [];
+  if (w === MAX_WAVE) {
+    for (let i = 0; i < 8; i++) q.push('dart');
+    q.push('brute', 'brute', 'splitter');
+    // shuffle escorts, boss enters last
+    for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
+    q.push('boss');
+    return q;
+  }
+  for (let i = 0; i < 5 + 3 * (w - 1); i++) q.push('dart');
+  if (w >= 3) for (let i = 0; i < Math.floor(w / 2); i++) q.push('brute');
+  if (w >= 4) for (let i = 0; i < Math.floor((w - 2) / 2); i++) q.push('splitter');
+  for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
+  // one random enemy per wave arrives as an ELITE from wave 4
+  if (w >= 4) q[Math.floor(Math.random() * q.length)] += '!';
+  return q;
+}
 
-function spawnEnemy(brute) {
+function spawnEnemy(type, opts) {
+  opts = opts || {};
+  const elite = type.endsWith('!');
+  if (elite) type = type.slice(0, -1);
+  const T = ENEMY_TYPES[type];
   const w = S.wave;
-  const side = Math.floor(Math.random() * 4);
-  let x, y;
-  if (side === 0) { x = -14; y = Math.random() * H; }
-  else if (side === 1) { x = W + 14; y = Math.random() * H; }
-  else if (side === 2) { x = Math.random() * W; y = -14; }
-  else { x = Math.random() * W; y = H + 14; }
-  const scale = Math.pow(1.22, w - 1);
-  enemies.push(brute ? {
-    x, y, brute: true,
-    hp: 26 * scale, max: 26 * scale,
-    speed: 21 + Math.random() * 5, dps: 9,
-    scrap: 10 * (1 + w * 0.12), size: 12, wob: Math.random() * 7, flash: 0,
-  } : {
-    x, y, brute: false,
-    hp: 6 * scale, max: 6 * scale,
-    speed: 38 + Math.random() * 14, dps: 4,
-    scrap: 3 * (1 + w * 0.12), size: 7.5, wob: Math.random() * 7, flash: 0,
+  let x = opts.x, y = opts.y;
+  if (x === undefined) {
+    const side = Math.floor(Math.random() * 4);
+    if (side === 0) { x = -14; y = Math.random() * H; }
+    else if (side === 1) { x = W + 14; y = Math.random() * H; }
+    else if (side === 2) { x = Math.random() * W; y = -14; }
+    else { x = Math.random() * W; y = H + 14; }
+  }
+  const scale = type === 'boss' ? 1 : Math.pow(1.22, w - 1);
+  const hp = T.hp * scale * (opts.hpMult || 1) * (elite ? 3 : 1);
+  enemies.push({
+    x, y, type, elite,
+    hp, max: hp,
+    speed: T.speed + Math.random() * T.spdVar,
+    dps: T.dps * (elite ? 1.5 : 1),
+    scrap: T.scrap * (1 + w * 0.12) * (elite ? 4 : 1) * (opts.hpMult || 1),
+    size: T.size * (elite ? 1.35 : 1),
+    color: T.color,
+    wob: Math.random() * 7, flash: 0, minionT: 0,
   });
 }
 
@@ -148,10 +188,60 @@ function killEnemy(en, colorHint) {
   const gain = en.scrap * calc().killMult;
   S.energy += gain;
   S.earned += gain;
-  fx.burstAt(en.x, en.y, colorHint || '#ff9d4d', en.brute ? 14 : 7);
+  fx.burstAt(en.x, en.y, colorHint || en.color, en.type === 'dart' ? 7 : 14);
   const r = cv.getBoundingClientRect();
   popup(r.left + en.x, r.top + en.y, '+' + fmt(gain) + icon('bolt'), 'var(--energy)');
-  sfx.kill(en.brute);
+  sfx.kill(en.type !== 'dart');
+
+  // overdrive charges off kills
+  if (S.odT <= 0 && S.od < OD_MAX) {
+    S.od = Math.min(OD_MAX, S.od + 5 + en.scrap * 0.12);
+    if (S.od >= OD_MAX && !S.odReadyPinged) {
+      S.odReadyPinged = true;
+      sfx.chime();
+      popup(r.left + W / 2, r.top + H / 2 - 60, iconize('[flux] OVERDRIVE READY — TAP THE SPIRE'), '#ffb75c');
+    }
+  }
+
+  // splitters burst into darts
+  if (en.type === 'splitter') {
+    for (let k = 0; k < 3; k++) {
+      spawnEnemy('dart', { x: en.x + (Math.random() - .5) * 30, y: en.y + (Math.random() - .5) * 30, hpMult: 0.5 });
+    }
+    fx.burstAt(en.x, en.y, '#b45cff', 10);
+  }
+
+  // bosses go out with a bang
+  if (en.type === 'boss') {
+    fx.flash('255,45,109', 0.5);
+    fx.nova('#ff2d6d', 80);
+    buzz([60, 40, 120]);
+  }
+
+  // drops: tap to collect (or Magnet Drones auto-collect)
+  const roll = Math.random();
+  if (roll < 0.10) pickups.push({ x: en.x, y: en.y, kind: 'scrap', t: 5, value: 12 + S.wave * 4 });
+  else if (roll < 0.16) pickups.push({ x: en.x, y: en.y, kind: 'orb', t: 5 });
+}
+
+function collectPickup(pk) {
+  const i = pickups.indexOf(pk);
+  if (i < 0) return;
+  pickups.splice(i, 1);
+  const r = cv.getBoundingClientRect();
+  if (pk.kind === 'scrap') {
+    S.energy += pk.value;
+    S.earned += pk.value;
+    popup(r.left + pk.x, r.top + pk.y, '+' + fmt(pk.value) + icon('bolt'), 'var(--energy)');
+    beep(1047, 0.1, 'triangle', 0.05);
+  } else {
+    S.shield = shieldMax();
+    popup(r.left + pk.x, r.top + pk.y, icon('shield') + ' FULL', 'var(--charge)');
+    beep(659, 0.12, 'triangle', 0.05);
+    fx.ring('#4dd8ff', 3);
+  }
+  fx.burstAt(pk.x, pk.y, pk.kind === 'scrap' ? '#ffd75c' : '#4dd8ff', 6);
+  buzz(10);
 }
 
 function nearestEnemy(x, y, maxDist) {
@@ -181,11 +271,32 @@ function tick(dt) {
   S.novaCd = Math.max(0, S.novaCd - dt);
   if (S.hitT > 0) S.hitT -= dt;
 
+  // overdrive burn-down
+  if (S.odT > 0) {
+    S.odT -= dt;
+    if (S.odT <= 0) { S.od = 0; S.odReadyPinged = false; }
+  }
+
+  // pickups age out; Magnet Drones fly them home
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const pk = pickups[i];
+    pk.t -= dt;
+    if (pk.t <= 0) { pickups.splice(i, 1); continue; }
+    if (has('magnet') && pk.t < 4.4) {
+      const dx = cx - pk.x, dy = cy - pk.y;
+      const d = Math.hypot(dx, dy) || 1;
+      pk.x += (dx / d) * 220 * dt;
+      pk.y += (dy / d) * 220 * dt;
+      if (d < coreR) collectPickup(pk);
+    }
+  }
+
   if (S.phase === 'calm') {
     S.calmT -= dt;
     if (S.calmT <= 0) {
       S.phase = 'combat';
-      S.spawnLeft = waveSize(S.wave) + bruteCount(S.wave);
+      S.queue = buildWave(S.wave);
+      S.spawnLeft = S.queue.length;
       S.spawnT = 0;
       sfx.wave();
       const r = cv.getBoundingClientRect();
@@ -193,13 +304,13 @@ function tick(dt) {
       buzz([20, 40, 20]);
     }
   } else if (S.phase === 'combat') {
-    // spawning: brutes bring up the rear
-    if (S.spawnLeft > 0) {
+    // spawning from the wave's typed queue
+    if (S.queue.length > 0) {
       S.spawnT -= dt;
       if (S.spawnT <= 0) {
         S.spawnT = Math.max(0.25, 0.9 - S.wave * 0.05);
-        spawnEnemy(S.spawnLeft <= bruteCount(S.wave));
-        S.spawnLeft--;
+        spawnEnemy(S.queue.shift());
+        S.spawnLeft = S.queue.length;
       }
     }
 
@@ -217,6 +328,16 @@ function tick(dt) {
         latchedDps += en.dps;
       }
       if (en.flash > 0) en.flash -= dt;
+      // the boss births darts while it lives
+      if (en.type === 'boss') {
+        en.minionT += dt;
+        if (en.minionT >= 4) {
+          en.minionT = 0;
+          for (let k = 0; k < 2; k++) spawnEnemy('dart', { x: en.x + (Math.random() - .5) * 40, y: en.y + (Math.random() - .5) * 40 });
+          fx.burstAt(en.x, en.y, '#ff2d6d', 8);
+          beep(160, 0.15, 'sawtooth', 0.04);
+        }
+      }
     }
     if (latchedDps > 0) {
       let dmg = latchedDps * dt;
@@ -270,11 +391,19 @@ function tick(dt) {
     }
 
     // wave cleared?
-    if (S.spawnLeft <= 0 && enemies.length === 0) {
+    if (S.queue.length === 0 && enemies.length === 0) {
       if (S.wave >= MAX_WAVE) return win();
       S.wave++;
       S.phase = 'calm';
       S.calmT = CALM_TIME;
+      // field crews patch the hull between waves
+      const repair = WAVE_REPAIR + (has('fieldrepair') ? 8 : 0);
+      const healed = Math.min(HULL_MAX - S.hull, repair);
+      if (healed > 0.5) {
+        S.hull += healed;
+        const r = cv.getBoundingClientRect();
+        popup(r.left + W / 2, r.top + H / 2 + 50, '+' + Math.round(healed) + ' ' + icon('rift'), 'var(--good)');
+      }
       sfx.chime();
       fx.ring('#5cff9d', 5);
       buzz(20);
@@ -386,6 +515,17 @@ function nova(e) {
   sfx.nova();
   buzz([20, 30, 50]);
   popAt(e, cv, icon('nova') + ' NOVA', 'var(--charge)');
+}
+
+function overdrive(e) {
+  if (S.paused || S.over || S.od < OD_MAX || S.odT > 0) return;
+  S.odT = OD_TIME + (has('odcore') ? 4 : 0);
+  fx.flash('255,183,92', 0.35);
+  fx.ring('#ffb75c', 6);
+  fx.nova('#ffb75c', 40);
+  sfx.nova();
+  buzz([30, 40, 80]);
+  popAt(e, cv, iconize('[flux] OVERDRIVE'), '#ffb75c');
 }
 
 // ---------- drafts (press-and-hold to confirm) ----------
@@ -501,6 +641,21 @@ function buildInfo() {
     <div class="info-sec">
       <h3>${icon('cog')} MACHINES</h3>
       ${machines}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('skull')} THREATS</h3>
+      ${row('hazard', 'Darts', '<span style="color:#ff9d4d">Orange</span>, fast, fragile. The swarm.')}
+      ${row('hazard', 'Splitters', '<span style="color:#b45cff">Purple diamonds</span> — burst into 3 darts when killed.')}
+      ${row('hazard', 'Brutes', '<span style="color:#ff5c4d">Red pentagons</span> — slow, tanky, heavy hitters.')}
+      ${row('sparkles', 'Elites', 'One per wave arrives <span style="color:#ffd75c">gold-ringed</span>: 3× HP, 4×[bolt].')}
+      ${row('skull', 'THE MAW', 'The <span style="color:#ff2d6d">wave-10 boss</span>. Births darts while it lives.')}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('bolt')} DROPS &amp; OVERDRIVE</h3>
+      ${row('bolt', 'Scrap Crystal', 'Sometimes drops from kills. Tap it before it fades: bonus [bolt].')}
+      ${row('shield', 'Aegis Orb', 'Rarer drop. Tap it: [shield] Shield instantly refills.')}
+      ${row('flux', 'Overdrive', 'Kills charge the gold ring around the Spire. When it pulses, tap the Spire: ' + OD_TIME + 's of doubled firepower.')}
+      ${row('rift', 'Field Repair', '+' + WAVE_REPAIR + ' hull patched after every cleared wave.')}
     </div>
     <div class="info-sec">
       <h3>${icon('cards')} CARD TAGS</h3>
@@ -806,11 +961,25 @@ function drawEnemy(en, t) {
   ctx.translate(en.x, en.y);
   ctx.rotate(ang);
   const s = en.size;
+  if (en.elite) {
+    ctx.shadowColor = '#ffd75c';
+    ctx.shadowBlur = 12;
+  }
   ctx.beginPath();
-  if (en.brute) {
+  if (en.type === 'brute') {
     for (let i = 0; i < 5; i++) {
       const a = (i / 5) * Math.PI * 2;
       ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * s, Math.sin(a) * s);
+    }
+  } else if (en.type === 'splitter') {
+    // diamond that visibly wants to come apart
+    ctx.moveTo(s, 0); ctx.lineTo(0, s * 0.8); ctx.lineTo(-s, 0); ctx.lineTo(0, -s * 0.8);
+  } else if (en.type === 'boss') {
+    // spiked maw
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const rr = i % 2 ? s * 0.7 : s;
+      ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr);
     }
   } else {
     // dart pointing at the Spire
@@ -820,8 +989,25 @@ function drawEnemy(en, t) {
     ctx.lineTo(-s * 0.8, -s * 0.65);
   }
   ctx.closePath();
-  ctx.fillStyle = en.flash > 0 ? '#ffffff' : (en.brute ? '#ff5c4d' : '#ff9d4d');
+  ctx.fillStyle = en.flash > 0 ? '#ffffff' : en.color;
   ctx.fill();
+  if (en.elite) {
+    ctx.strokeStyle = '#ffd75c';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  if (en.type === 'boss') {
+    // inner eye
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = '#07070f';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff2d6d';
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
   ctx.restore();
 
   // hp sliver once damaged
@@ -903,8 +1089,68 @@ function drawRift(dt) {
     ctx.fillText('WAVE ' + S.wave + ' IN ' + Math.ceil(S.calmT), cx, cy - coreR * 2);
   }
 
+  // overdrive: gold charge ring around the Spire; pulses when ready
+  if (S.od > 0 || S.odT > 0) {
+    const odR = coreR * 1.7;
+    const frac = S.odT > 0 ? S.odT / (OD_TIME + (has('odcore') ? 4 : 0)) : S.od / OD_MAX;
+    const ready = S.od >= OD_MAX && S.odT <= 0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, odR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+    ctx.strokeStyle = ready ? `rgba(255,183,92,${0.7 + 0.3 * Math.sin(t * 8)})` : (S.odT > 0 ? '#ffb75c' : 'rgba(255,183,92,0.45)');
+    ctx.lineWidth = ready ? 4 : 2.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    if (ready) {
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(255,183,92,${0.6 + 0.4 * Math.sin(t * 8)})`;
+      ctx.fillText('TAP', cx, cy + odR + 14);
+    }
+  }
+
+  // pickups: tap to collect before they fade
+  for (const pk of pickups) {
+    const fade = Math.min(1, pk.t);
+    ctx.save();
+    ctx.translate(pk.x, pk.y);
+    ctx.globalAlpha = fade;
+    if (pk.kind === 'scrap') {
+      ctx.rotate(t * 2);
+      ctx.shadowColor = '#ffd75c';
+      ctx.shadowBlur = 10;
+      drawIcon('bolt', 0, 0, 20 + Math.sin(t * 5) * 3, '#ffd75c');
+    } else {
+      ctx.shadowColor = '#4dd8ff';
+      ctx.shadowBlur = 10;
+      drawIcon('shield', 0, 0, 20 + Math.sin(t * 5) * 3, '#4dd8ff');
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
   // enemies
   for (const en of enemies) drawEnemy(en, t);
+
+  // boss health bar
+  const boss = enemies.find(en => en.type === 'boss');
+  if (boss) {
+    const bw = W * 0.6;
+    ctx.fillStyle = 'rgba(0,0,0,.6)';
+    ctx.fillRect(W / 2 - bw / 2, 14, bw, 8);
+    ctx.fillStyle = '#ff2d6d';
+    ctx.fillRect(W / 2 - bw / 2, 14, bw * Math.max(0, boss.hp / boss.max), 8);
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff8fb3';
+    ctx.fillText('THE MAW', W / 2, 34);
+  }
+
+  // overdrive screen tint
+  if (S.odT > 0) {
+    ctx.fillStyle = `rgba(255,183,92,${0.05 + 0.03 * Math.sin(t * 10)})`;
+    ctx.fillRect(-10, -10, W + 20, H + 20);
+  }
 
   // reactor income made visible: motes drift from the Reactor node to the Spire
   if (!S.paused && !S.over && S.counts.reactor > 0) {
@@ -1051,9 +1297,15 @@ function frame(now) {
 cv.addEventListener('pointerdown', e => {
   if (e.button || !S || S.paused || S.over) return;
   const r = cv.getBoundingClientRect();
-  const key = hitNode(e.clientX - r.left, e.clientY - r.top);
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const key = hitNode(x, y);
   if (key === 'nova') return nova(e);
   if (key) return buy(key, false, e);
+  for (const pk of pickups) {
+    if (Math.hypot(pk.x - x, pk.y - y) < 30) return collectPickup(pk);
+  }
+  const coreR = Math.min(W, H) * 0.13;
+  if (S.od >= OD_MAX && S.odT <= 0 && Math.hypot(x - W / 2, y - H / 2) < coreR * 1.6) return overdrive(e);
   zap(e);
 });
 
