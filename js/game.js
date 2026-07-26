@@ -1,192 +1,295 @@
 'use strict';
 
 /* =========================================================
-   RIFTFORGE — an automation roguelike prototype
+   RIFTFORGE — an automation defense roguelike
+   Defend the Rift Spire. Enemies fly in from the edges.
+   Zap them yourself; build machines so the Spire fights back.
    ========================================================= */
 
 // ---------- tuning ----------
-const GOAL = 3000;          // total rift charge to win
-const HEAT_CAP = 100;
-const BASE_DISSIPATION = 1.2; // heat/s removed passively
-const AMBIENT_PER_MIN = 0.9;  // instability: +this much heat/s per minute elapsed
-const MELT_TIME = 4;          // seconds at max heat before losing
-const VENT_AMOUNT = 20;
-const VENT_CD = 8;
-const HOLD_TIME = 1;         // seconds of press-and-hold to confirm a card pick
+const MAX_WAVE = 10;
+const HULL_MAX = 100;
+const BASE_SHIELD = 30;
+const BASE_REGEN = 1.2;    // shield/s
+const CALM_TIME = 3;       // seconds between waves
+const ZAP_DMG = 4;
+const ZAP_RANGE = 70;      // px around the tap that still hits
+const NOVA_DMG = 16;
+const NOVA_CD = 15;
+const HOLD_TIME = 1;       // press-and-hold seconds to confirm a card
 
 const MACHINES = {
-  dynamo:   { name: 'Dynamo',   icon: 'dynamo',    base: 15,  growth: 1.15, eps: 1.5,  heat: 0.35, desc: '+1.5[bolt] +0.35[flame]' },
-  turbine:  { name: 'Turbine',  icon: 'turbine',  base: 130, growth: 1.18, eps: 10,   heat: 2.2,  desc: '+10[bolt] +2.2[flame]' },
-  cooler:   { name: 'Cooler',   icon: 'cooler',   base: 60,  growth: 1.16, cool: 3,               desc: '−3[flame]' },
-  injector: { name: 'Injector', icon: 'injector', base: 220, growth: 1.20, channel: 6, heat: 0.9, desc: '6[bolt]→[rift] +0.9[flame]' },
+  reactor: { name: 'Reactor',    icon: 'reactor', base: 20,  growth: 1.5,  desc: '+2[bolt]/s income' },
+  turret:  { name: 'Turret',     icon: 'turret',  base: 30,  growth: 1.5,  desc: '1 shot/s · 4 dmg' },
+  shield:  { name: 'Shield Gen', icon: 'shield',  base: 40,  growth: 1.5,  desc: '+15 max [shield] · +0.6/s' },
+  tesla:   { name: 'Tesla Coil', icon: 'tesla',   base: 100, growth: 1.6,  desc: 'every 3s: chain 6 dmg ×2' },
 };
+const MACHINE_COLORS = { reactor: '#9d7cff', turret: '#ffd75c', shield: '#4dd8ff', tesla: '#b45cff' };
 
 // replace [bolt]-style tokens with inline icons
 const iconize = str => str.replace(/\[(\w+)\]/g, (_, n) => icon(n));
 
 const TAGS = {
-  OVER: { icon: 'flame', name: 'Overclock', blurb: 'More output, more [flame]. Run hot, win fast.' },
-  CRYO: { icon: 'snowflake', name: 'Cryo', blurb: 'Control [flame] and turn cooling into profit.' },
-  FLUX: { icon: 'flux', name: 'Flux', blurb: 'Charge the [rift] faster per [bolt] spent.' },
-  AUTO: { icon: 'cog', name: 'Auto', blurb: 'The forge acts without you. Stacks with itself.' },
+  OVER:   { icon: 'flame',  name: 'Overclock', blurb: 'Raw firepower. Kill faster than they arrive.' },
+  AEGIS:  { icon: 'shield', name: 'Aegis',     blurb: 'The [shield] Shield holds while the guns work.' },
+  STORM:  { icon: 'jolt',   name: 'Storm',     blurb: 'Lightning: your [jolt] Zap and [tesla] Tesla Coils.' },
+  AUTO:   { icon: 'cog',    name: 'Auto',      blurb: 'The Spire acts without you. Stacks with itself.' },
 };
 
-// Cards can reference tag counts → visible synergies.
 const CARDS = [
-  { id: 'overclock', name: 'Overclock Coils', tags: ['OVER'], desc: '[dynamo] Dynamos +100%[bolt], +50%[flame]' },
-  { id: 'redline',   name: 'Redline Protocol', tags: ['OVER'], desc: '+6%[bolt] per 10 current [flame]', syn: 'Loves running hot.' },
-  { id: 'turbo',     name: 'Turbo Manifold', tags: ['OVER'], desc: '[turbine] Turbines +75%[bolt]' },
-  { id: 'embertap',  name: 'Ember Tap', tags: ['OVER'], desc: '+0.4[bolt]/s per current [flame]', syn: 'Heat becomes fuel.' },
-  { id: 'supercon',  name: 'Superconductors', tags: ['CRYO'], desc: '[cooler] Coolers +80% effective' },
-  { id: 'recycler',  name: 'Cryo Recycler', tags: ['CRYO'], desc: '[steam] Vent grants 15[bolt] per [flame]', syn: 'Vent becomes a generator.' },
-  { id: 'deepfreeze',name: 'Deep Freeze', tags: ['CRYO'], desc: 'Passive cooling +2[flame]/s' },
-  { id: 'fluxcap',   name: 'Flux Capacitor', tags: ['FLUX'], desc: '[injector] Injectors +80% faster' },
-  { id: 'resonance', name: 'Resonance', tags: ['FLUX'], desc: '+12% charge per [flux] card', syn: 'Scales with every Flux pick.' },
-  { id: 'coldfusion',name: 'Cold Fusion', tags: ['CRYO', 'FLUX'], desc: '[flame] below 40: charge +50%', syn: 'Rewards a cool forge.' },
-  { id: 'surge',     name: 'Surge Channel', tags: ['FLUX'], desc: '[injector] Injectors +4[bolt], +0.5[flame] each' },
-  { id: 'autofab',   name: 'Auto-Fabricator', tags: ['AUTO'], desc: 'Auto-buys [dynamo] Dynamo every 6s' },
-  { id: 'servovent', name: 'Servo Vents', tags: ['AUTO'], desc: 'Auto-vents 12[flame] above 75' },
-  { id: 'gridmind',  name: 'Grid Mind', tags: ['AUTO'], desc: '+15%[bolt] per [cog] card', syn: 'Scales with every Auto pick.' },
-];
-
-// Draft triggers, checked in order. First two fire off lifetime energy earned,
-// the rest off rift charge — so choices arrive all run long.
-const DRAFT_TRIGGERS = [
-  s => s.earned >= 150,
-  s => s.earned >= 600,
-  s => s.charge >= GOAL * 0.15,
-  s => s.charge >= GOAL * 0.35,
-  s => s.charge >= GOAL * 0.60,
-  s => s.charge >= GOAL * 0.85,
+  { id: 'overcharge',  name: 'Overcharge',      tags: ['OVER'],  desc: '[turret] Turrets +60% damage' },
+  { id: 'rapidfire',   name: 'Rapid Fire',      tags: ['OVER'],  desc: '[turret] Turrets +50% fire rate' },
+  { id: 'executioner', name: 'Executioner',     tags: ['OVER'],  desc: 'Any hit kills enemies below 20% HP', syn: 'Finish the tanky ones early.' },
+  { id: 'stormzap',    name: 'Storm Zap',       tags: ['OVER', 'STORM'], desc: '[jolt] Zap +100% damage' },
+  { id: 'bulwark',     name: 'Bulwark',         tags: ['AEGIS'], desc: '+40 max [shield] Shield' },
+  { id: 'regenerator', name: 'Regenerator',     tags: ['AEGIS'], desc: '[shield] Shield regen +2/s' },
+  { id: 'thorns',      name: 'Thorn Field',     tags: ['AEGIS'], desc: 'Enemies gnawing the Spire take 3 dmg/s', syn: 'Turns being hit into a weapon.' },
+  { id: 'capacitor',   name: 'Capacitor',       tags: ['AEGIS', 'STORM'], desc: '[shield] Shield full: all damage +35%', syn: 'Rewards keeping the Shield topped up.' },
+  { id: 'chain',       name: 'Chain Lightning', tags: ['STORM'], desc: '[tesla] Tesla hits +2 extra targets' },
+  { id: 'static',      name: 'Static Field',    tags: ['STORM'], desc: '[jolt] Zap splashes 50% damage nearby' },
+  { id: 'resonance',   name: 'Resonance',       tags: ['STORM'], desc: '[tesla] Tesla +20% damage per [jolt] STORM card', syn: 'Scales with every Storm pick.' },
+  { id: 'scrap',       name: 'Scrap Magnet',    tags: ['AUTO'],  desc: '+50%[bolt] from kills' },
+  { id: 'autoforge',   name: 'Auto-Forge',      tags: ['AUTO'],  desc: 'Every 8s: auto-buys the cheapest machine' },
+  { id: 'gridmind',    name: 'Grid Mind',       tags: ['AUTO'],  desc: '+12% all damage per [cog] AUTO card', syn: 'Scales with every Auto pick.' },
 ];
 
 // ---------- state ----------
 let S;
+const enemies = [];
 function newRun() {
   S = {
-    energy: 0, earned: 0, heat: 0, charge: 0, time: 0,
-    counts: { dynamo: 1, turbine: 0, cooler: 0, injector: 0 }, // start with 1 dynamo so numbers move immediately
+    energy: 35, earned: 0, time: 0,
+    hull: HULL_MAX, kills: 0,
+    shield: BASE_SHIELD,
+    wave: 1, phase: 'calm', calmT: CALM_TIME,
+    spawnLeft: 0, spawnT: 0,
+    counts: { reactor: 0, turret: 1, shield: 0, tesla: 0 }, // start with 1 turret so the Spire fights back immediately
     cards: [],
-    draftsDone: 0,
-    ventCd: 0, servoCd: 0, autofabT: 0,
-    melt: 0,
-    totalVented: 0, jolts: 0,
-    combo: 0, comboT: 0, milestone: 0,
+    combo: 0, comboT: 0,
+    novaCd: 0, teslaT: 0, turretAcc: 0, autoT: 0, thornT: 0, hitT: 0,
     ending: null, endT: 0, endShown: false,
     paused: true, over: false,
   };
+  enemies.length = 0;
 }
 
 const has = id => S.cards.includes(id);
 const tagCount = tag => S.cards.reduce((n, id) => n + (CARDS.find(c => c.id === id).tags.includes(tag) ? 1 : 0), 0);
 const cost = key => Math.ceil(MACHINES[key].base * Math.pow(MACHINES[key].growth, S.counts[key]));
 
-// ---------- derived rates (recomputed every tick) ----------
+// ---------- derived rates ----------
+function shieldMax() { return BASE_SHIELD + S.counts.shield * 15 + (has('bulwark') ? 40 : 0); }
+
 function calc() {
-  const c = S.counts;
-  let dynamoEps = c.dynamo * MACHINES.dynamo.eps;
-  let dynamoHeat = c.dynamo * MACHINES.dynamo.heat;
-  if (has('overclock')) { dynamoEps *= 2; dynamoHeat *= 1.5; }
+  let dmgMult = 1;
+  if (has('gridmind')) dmgMult *= 1 + 0.12 * tagCount('AUTO');
+  if (has('capacitor') && S.shield >= shieldMax() - 0.5) dmgMult *= 1.35;
 
-  let turbineEps = c.turbine * MACHINES.turbine.eps;
-  if (has('turbo')) turbineEps *= 1.75;
+  const turretDmg = 4 * (has('overcharge') ? 1.6 : 1) * dmgMult;
+  const turretRate = S.counts.turret * (has('rapidfire') ? 1.5 : 1);
 
-  let prodMult = 1;
-  if (has('redline')) prodMult *= 1 + 0.006 * S.heat;
-  if (has('gridmind')) prodMult *= 1 + 0.15 * tagCount('AUTO');
+  const zapDmg = ZAP_DMG * (has('stormzap') ? 2 : 1) * dmgMult;
 
-  let eps = (dynamoEps + turbineEps) * prodMult;
-  if (has('embertap')) eps += 0.4 * S.heat;
+  let teslaDmg = 6 * dmgMult;
+  if (has('resonance')) teslaDmg *= 1 + 0.20 * tagCount('STORM');
+  const teslaTargets = 2 + (has('chain') ? 2 : 0);
 
-  let channelPer = MACHINES.injector.channel + (has('surge') ? 4 : 0);
-  let channel = c.injector * channelPer;
-  if (has('fluxcap')) channel *= 1.8;
-
-  let chargeMult = 1;
-  if (has('resonance')) chargeMult *= 1 + 0.12 * tagCount('FLUX');
-  if (has('coldfusion') && S.heat < 40) chargeMult *= 1.5;
-
-  let injectorHeat = c.injector * (MACHINES.injector.heat + (has('surge') ? 0.5 : 0));
-  const machineHeat = dynamoHeat + c.turbine * MACHINES.turbine.heat + injectorHeat;
-  const ambient = (S.time / 60) * AMBIENT_PER_MIN;
-
-  let cooling = c.cooler * MACHINES.cooler.cool * (has('supercon') ? 1.8 : 1);
-  cooling += BASE_DISSIPATION + (has('deepfreeze') ? 2 : 0);
+  const regen = BASE_REGEN + S.counts.shield * 0.6 + (has('regenerator') ? 2 : 0);
 
   return {
-    eps, channel, chargeMult,
-    heatIn: machineHeat + ambient,
-    heatOut: cooling,
-    ambient,
-    joltAmt: 3 + eps * 0.15,
+    income: S.counts.reactor * 2,
+    turretDmg, turretRate,
+    zapDmg,
+    teslaDmg, teslaTargets,
+    regen,
+    killMult: has('scrap') ? 1.5 : 1,
+    novaDmg: NOVA_DMG * dmgMult,
   };
+}
+
+// ---------- enemies ----------
+function waveSize(w) { return 5 + 3 * (w - 1); }
+function bruteCount(w) { return w >= 3 ? Math.floor(w / 2) : 0; }
+
+function spawnEnemy(brute) {
+  const w = S.wave;
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  if (side === 0) { x = -14; y = Math.random() * H; }
+  else if (side === 1) { x = W + 14; y = Math.random() * H; }
+  else if (side === 2) { x = Math.random() * W; y = -14; }
+  else { x = Math.random() * W; y = H + 14; }
+  const scale = Math.pow(1.22, w - 1);
+  enemies.push(brute ? {
+    x, y, brute: true,
+    hp: 26 * scale, max: 26 * scale,
+    speed: 21 + Math.random() * 5, dps: 9,
+    scrap: 10 * (1 + w * 0.12), size: 12, wob: Math.random() * 7, flash: 0,
+  } : {
+    x, y, brute: false,
+    hp: 6 * scale, max: 6 * scale,
+    speed: 38 + Math.random() * 14, dps: 4,
+    scrap: 3 * (1 + w * 0.12), size: 7.5, wob: Math.random() * 7, flash: 0,
+  });
+}
+
+function hurtEnemy(en, dmg, sourceColor) {
+  en.hp -= dmg;
+  if (has('executioner') && en.hp > 0 && en.hp < en.max * 0.2) en.hp = 0;
+  en.flash = 0.12;
+  if (en.hp <= 0) killEnemy(en, sourceColor);
+}
+
+function killEnemy(en, colorHint) {
+  const i = enemies.indexOf(en);
+  if (i < 0) return;
+  enemies.splice(i, 1);
+  S.kills++;
+  const gain = en.scrap * calc().killMult;
+  S.energy += gain;
+  S.earned += gain;
+  fx.burstAt(en.x, en.y, colorHint || '#ff9d4d', en.brute ? 14 : 7);
+  const r = cv.getBoundingClientRect();
+  popup(r.left + en.x, r.top + en.y, '+' + fmt(gain) + icon('bolt'), 'var(--energy)');
+  sfx.kill(en.brute);
+}
+
+function nearestEnemy(x, y, maxDist) {
+  let best = null, bd = maxDist === undefined ? Infinity : maxDist;
+  for (const en of enemies) {
+    const d = Math.hypot(en.x - x, en.y - y);
+    if (d < bd) { bd = d; best = en; }
+  }
+  return best;
 }
 
 // ---------- tick ----------
 function tick(dt) {
-  if (S.paused || S.over) return;
+  if (!S || S.paused || S.over) return;
   S.time += dt;
   const R = calc();
+  const cx = W / 2, cy = H / 2;
+  const coreR = Math.min(W, H) * 0.13;
 
-  // production
-  S.energy += R.eps * dt;
-  S.earned += R.eps * dt;
+  // economy + shield regen
+  S.energy += R.income * dt;
+  S.earned += R.income * dt;
+  S.shield = Math.min(shieldMax(), S.shield + R.regen * dt);
 
-  // channeling: injectors drain energy into the rift
-  if (R.channel > 0 && S.energy > 0) {
-    const drain = Math.min(R.channel * dt, S.energy);
-    S.energy -= drain;
-    S.charge += drain * R.chargeMult;
-  }
+  // combo decay + cooldowns
+  if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
+  S.novaCd = Math.max(0, S.novaCd - dt);
+  if (S.hitT > 0) S.hitT -= dt;
 
-  // heat
-  S.heat = Math.max(0, S.heat + (R.heatIn - R.heatOut) * dt);
+  if (S.phase === 'calm') {
+    S.calmT -= dt;
+    if (S.calmT <= 0) {
+      S.phase = 'combat';
+      S.spawnLeft = waveSize(S.wave) + bruteCount(S.wave);
+      S.spawnT = 0;
+      sfx.wave();
+      const r = cv.getBoundingClientRect();
+      popup(r.left + W / 2, r.top + H * 0.25, 'WAVE ' + S.wave, 'var(--heat)');
+      buzz([20, 40, 20]);
+    }
+  } else if (S.phase === 'combat') {
+    // spawning: brutes bring up the rear
+    if (S.spawnLeft > 0) {
+      S.spawnT -= dt;
+      if (S.spawnT <= 0) {
+        S.spawnT = Math.max(0.25, 0.9 - S.wave * 0.05);
+        spawnEnemy(S.spawnLeft <= bruteCount(S.wave));
+        S.spawnLeft--;
+      }
+    }
 
-  // cooldowns & automation cards
-  S.ventCd = Math.max(0, S.ventCd - dt);
-  S.servoCd = Math.max(0, S.servoCd - dt);
-  if (has('servovent') && S.heat > 75 && S.servoCd <= 0) {
-    doVent(12);
-    S.servoCd = 9;
-    fx.pulse('#5cff9d');
-  }
-  if (has('autofab')) {
-    S.autofabT += dt;
-    if (S.autofabT >= 6) {
-      S.autofabT = 0;
-      if (S.energy >= cost('dynamo')) buy('dynamo', true);
+    // movement + latched damage
+    let latchedDps = 0;
+    for (const en of enemies) {
+      const dx = cx - en.x, dy = cy - en.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d > coreR + en.size) {
+        en.x += (dx / d) * en.speed * dt;
+        en.y += (dy / d) * en.speed * dt;
+        en.latched = false;
+      } else {
+        en.latched = true;
+        latchedDps += en.dps;
+      }
+      if (en.flash > 0) en.flash -= dt;
+    }
+    if (latchedDps > 0) {
+      let dmg = latchedDps * dt;
+      const fromShield = Math.min(S.shield, dmg);
+      S.shield -= fromShield;
+      dmg -= fromShield;
+      if (dmg > 0) {
+        S.hull -= dmg;
+        S.hitT = 0.15;
+      }
+      if (S.hull <= 0) { S.hull = 0; return lose(); }
+    }
+
+    // thorns burn latched enemies
+    if (has('thorns')) {
+      S.thornT += dt;
+      if (S.thornT >= 0.5) {
+        S.thornT = 0;
+        for (const en of [...enemies]) if (en.latched) hurtEnemy(en, 1.5, '#5cff9d');
+      }
+    }
+
+    // turrets: auto-fire at the enemy nearest the Spire
+    S.turretAcc += R.turretRate * dt;
+    while (S.turretAcc >= 1) {
+      S.turretAcc--;
+      const t = nearestEnemy(cx, cy);
+      if (!t) { S.turretAcc = 0; break; }
+      beams.push({ x1: cx, y1: cy, x2: t.x, y2: t.y, t: 0.1, max: 0.1, c: '#ffd75c' });
+      hurtEnemy(t, R.turretDmg, '#ffd75c');
+      sfx.shot();
+    }
+
+    // tesla coils: periodic chain lightning
+    if (S.counts.tesla > 0) {
+      S.teslaT += dt;
+      const interval = 3 / S.counts.tesla;
+      if (S.teslaT >= interval && enemies.length) {
+        S.teslaT = 0;
+        let px = cx, py = cy;
+        const targets = [...enemies]
+          .sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))
+          .slice(0, R.teslaTargets);
+        for (const t of targets) {
+          arcs.push({ x: px, y: py, tx: t.x, ty: t.y, t: 0.16, max: 0.16 });
+          px = t.x; py = t.y;
+        }
+        for (const t of targets) hurtEnemy(t, R.teslaDmg, '#b45cff');
+        sfx.tesla();
+      }
+    }
+
+    // wave cleared?
+    if (S.spawnLeft <= 0 && enemies.length === 0) {
+      if (S.wave >= MAX_WAVE) return win();
+      S.wave++;
+      S.phase = 'calm';
+      S.calmT = CALM_TIME;
+      sfx.chime();
+      fx.ring('#5cff9d', 5);
+      buzz(20);
+      openDraft();
     }
   }
 
-  // combo decay
-  if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
-
-  // charge milestone celebrations (every 10%)
-  const ms = Math.floor(S.charge / GOAL * 10);
-  if (ms > S.milestone && ms < 10) {
-    S.milestone = ms;
-    sfx.chime();
-    buzz(15);
-    fx.ring('#4dd8ff', 5);
-    const r = cv.getBoundingClientRect();
-    popup(r.left + r.width / 2, r.top + r.height / 2, ms * 10 + '%', 'var(--charge)');
-  }
-
-  // meltdown
-  if (S.heat >= HEAT_CAP) {
-    S.heat = HEAT_CAP;
-    S.melt += dt;
-    if (S.melt >= MELT_TIME) return lose();
-  } else {
-    S.melt = 0;
-  }
-
-  // win
-  if (S.charge >= GOAL) return win();
-
-  // drafts
-  if (S.draftsDone < DRAFT_TRIGGERS.length && DRAFT_TRIGGERS[S.draftsDone](S)) {
-    openDraft();
+  // auto-forge
+  if (has('autoforge')) {
+    S.autoT += dt;
+    if (S.autoT >= 8) {
+      S.autoT = 0;
+      const cheapest = Object.keys(MACHINES).sort((a, b) => cost(a) - cost(b))[0];
+      if (S.energy >= cost(cheapest)) buy(cheapest, true);
+    }
   }
 }
 
@@ -202,7 +305,6 @@ function popup(x, y, html, color) {
   setTimeout(() => el.remove(), 850);
 }
 function popAt(e, el, html, color) {
-  // prefer tap point; fall back to the element's center
   let x = e && e.clientX, y = e && e.clientY;
   if (!x && el) { const r = el.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top + r.height / 2; }
   popup(x, y, html, color);
@@ -210,8 +312,7 @@ function popAt(e, el, html, color) {
 const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (err) { /* unsupported */ } };
 
 // ---------- actions ----------
-const MACHINE_COLORS = { dynamo: '#9d7cff', turbine: '#ffd75c', cooler: '#4dd8ff', injector: '#b45cff' };
-const nodePulse = { dynamo: 0, turbine: 0, cooler: 0, injector: 0, vent: 0 };
+const nodePulse = { reactor: 0, turret: 0, shield: 0, tesla: 0, nova: 0 };
 
 function buy(key, silent, e) {
   const c = cost(key);
@@ -226,6 +327,7 @@ function buy(key, silent, e) {
   S.energy -= c;
   S.counts[key]++;
   nodePulse[key] = 1;
+  if (key === 'shield') S.shield += 15; // new capacity arrives charged
   if (!silent) {
     sfx.buyTone(key);
     buzz(15);
@@ -234,62 +336,63 @@ function buy(key, silent, e) {
   }
 }
 
-function doVent(amount) {
-  const vented = Math.min(S.heat, amount);
-  S.heat -= vented;
-  S.totalVented += vented;
-  if (has('recycler')) {
-    S.energy += vented * 15;
-    S.earned += vented * 15;
-  }
-}
-
-function jolt(e) {
+function zap(e) {
   if (S.paused || S.over) return;
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const R = calc();
+  const target = nearestEnemy(x, y, ZAP_RANGE);
+  const cx = W / 2, cy = H / 2;
+  if (!target) {
+    // dry fire: tiny fizzle, no combo
+    fx.burstAt(x, y, '#4dd8ff', 3);
+    beep(300, 0.04, 'triangle', 0.02);
+    return;
+  }
   S.combo = Math.min(25, S.combo + 1);
   S.comboT = 1.1;
   const mult = 1 + (S.combo - 1) * 0.05;
-  const amt = calc().joltAmt * mult;
-  S.energy += amt;
-  S.earned += amt;
-  S.jolts++;
+  const dmg = R.zapDmg * mult;
+  arcs.push({ x: cx, y: cy, tx: target.x, ty: target.y, t: 0.15, max: 0.15 });
+  fx.burstAt(target.x, target.y, '#4dd8ff', 5);
+  hurtEnemy(target, dmg, '#4dd8ff');
+  if (has('static')) {
+    for (const en of [...enemies]) {
+      if (en !== target && Math.hypot(en.x - target.x, en.y - target.y) < 60) hurtEnemy(en, dmg * 0.5, '#4dd8ff');
+    }
+  }
   sfx.tap(S.combo);
   buzz(8);
-  const color = S.combo >= 15 ? '#ffffff' : S.combo >= 5 ? '#ffb75c' : 'var(--energy)';
-  popAt(e, cv, '+' + fmt(amt) + icon('bolt') + (S.combo >= 5 ? ' ×' + S.combo : ''), color);
-  // lightning strike on the rift — at the tap point if the canvas was tapped
-  const r = cv.getBoundingClientRect();
-  let x, y;
-  if (e && e.target === cv) { x = e.clientX - r.left; y = e.clientY - r.top; }
-  else { x = W * (0.25 + Math.random() * 0.5); y = H * 0.12; }
-  fx.bolt(x, y);
-  fx.burstAt(x, y, '#ffd75c', 6);
-  const eb = document.querySelector('.energy-big');
-  eb.classList.remove('pop'); void eb.offsetWidth; eb.classList.add('pop');
+  const color = S.combo >= 15 ? '#ffffff' : S.combo >= 5 ? '#ffb75c' : 'var(--charge)';
+  popAt(e, cv, fmt(dmg) + (S.combo >= 5 ? ' ×' + S.combo : ''), color);
 }
 
-function vent(e) {
-  if (S.paused || S.over || S.ventCd > 0) return;
-  const before = S.heat;
-  doVent(VENT_AMOUNT);
-  const vented = before - S.heat;
-  S.ventCd = VENT_CD;
-  nodePulse.vent = 1;
-  sfx.vent();
-  buzz(20);
-  popAt(e, cv, '−' + Math.round(vented) + icon('flame'), 'var(--charge)');
-  if (has('recycler') && vented > 0) {
-    setTimeout(() => popAt(null, cv, '+' + fmt(vented * 15) + icon('bolt'), 'var(--energy)'), 150);
+function nova(e) {
+  if (S.paused || S.over || S.novaCd > 0) return;
+  S.novaCd = NOVA_CD;
+  nodePulse.nova = 1;
+  const R = calc();
+  const cx = W / 2, cy = H / 2;
+  fx.flash('140,220,255', 0.3);
+  fx.ring('#8ad8ff', 6);
+  fx.nova('#8ad8ff', 50);
+  for (const en of [...enemies]) {
+    const dx = en.x - cx, dy = en.y - cy;
+    const d = Math.hypot(dx, dy) || 1;
+    en.x += (dx / d) * 90;
+    en.y += (dy / d) * 90;
+    hurtEnemy(en, R.novaDmg, '#8ad8ff');
   }
-  fx.steam();
+  sfx.nova();
+  buzz([20, 30, 50]);
+  popAt(e, cv, icon('nova') + ' NOVA', 'var(--charge)');
 }
 
-// ---------- drafts ----------
+// ---------- drafts (press-and-hold to confirm) ----------
 let draftOffer = [];
 function openDraft() {
   const pool = CARDS.filter(c => !has(c.id));
-  if (pool.length === 0) { S.draftsDone++; return; }
-  // shuffle
+  if (pool.length === 0) return;
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -310,6 +413,7 @@ function openDraft() {
       `<div class="c-top"><div class="c-name">${card.name}</div><div class="c-tags">${tags}</div></div>` +
       `<div class="c-desc">${iconize(card.desc)}</div>` +
       (card.syn ? `<div class="c-syn">${icon('sparkles')} ${card.syn}</div>` : '');
+
     // press-and-hold to confirm — guards against accidental taps
     const fill = document.createElement('div');
     fill.className = 'hold-fill';
@@ -320,14 +424,14 @@ function openDraft() {
       if (done) return;
       const p = Math.min(1, (now - t0) / (HOLD_TIME * 1000));
       fill.style.width = (p * 100) + '%';
-      const tick = Math.floor(p * 6);
-      if (tick > ticks) { ticks = tick; sfx.hold(p); buzz(4); }
+      const tk = Math.floor(p * 6);
+      if (tk > ticks) { ticks = tk; sfx.hold(p); buzz(4); }
       if (p >= 1) return finish();
       raf = requestAnimationFrame(step);
     };
-    const start = e => {
+    const start = ev => {
       if (pickLock || done) return;
-      try { btn.setPointerCapture(e.pointerId); } catch (err) { /* not captureable */ }
+      try { btn.setPointerCapture(ev.pointerId); } catch (err) { /* not captureable */ }
       btn.classList.add('holding');
       t0 = performance.now();
       ticks = 0;
@@ -350,7 +454,7 @@ function openDraft() {
       buzz(30);
       setTimeout(() => pickCard(card.id), 220);
     };
-    btn.addEventListener('pointerdown', e => { if (e.button) return; start(e); });
+    btn.addEventListener('pointerdown', ev => { if (ev.button) return; start(ev); });
     btn.addEventListener('pointerup', cancel);
     btn.addEventListener('pointercancel', cancel);
     wrap.appendChild(btn);
@@ -360,7 +464,6 @@ function openDraft() {
 
 function pickCard(id) {
   S.cards.push(id);
-  S.draftsDone++;
   hideOverlay();
   S.paused = false;
   sfx.pick();
@@ -374,32 +477,26 @@ function buildInfo() {
   const row = (ic, name, text) =>
     `<div class="info-row">${icon(ic)}<div><b>${name}</b>${text ? '<span>' + iconize(text) + '</span>' : ''}</div></div>`;
 
-  const machines = Object.values(MACHINES)
-    .map(m => row(m.icon, m.name, m.desc + (m.cool ? '' : ''))).join('');
-
+  const machines = Object.values(MACHINES).map(m => row(m.icon, m.name, m.desc)).join('');
   const tags = Object.values(TAGS).map(t => row(t.icon, t.name, t.blurb)).join('');
 
   $id('info-body').innerHTML = `
     <div class="info-sec">
       <h3>${icon('rift')} GOAL</h3>
-      <p>${iconize('Charge the [rift] Rift to 100% and you win. [injector] Injectors are the only thing that charges it — they pull [bolt] Energy out of your reserve and pour it into the Rift.')}</p>
-    </div>
-    <div class="info-sec">
-      <h3>${icon('hazard')} DANGER</h3>
-      <p>${iconize('Every machine makes [flame] Heat, and the Rift grows more unstable every minute. If [flame] Heat sits at 100 for 4 seconds, the forge melts down and the run ends.')}</p>
+      <p>${iconize('Enemies fly in from the edges and gnaw on your [rift] Rift Spire. Survive all ' + MAX_WAVE + ' waves and you win. If the Spire hull hits 0, the run ends.')}</p>
     </div>
     <div class="info-sec">
       <h3>${icon('help')} SYMBOLS</h3>
-      ${row('bolt', 'Energy', 'Your spendable resource. Builds machines, feeds the [rift] Rift.')}
-      ${row('flame', 'Heat', 'Rises from machines and time. Hit 100 and you die.')}
-      ${row('rift', 'Rift Charge', 'Your progress. 100% = victory.')}
-      ${row('sparkles', 'Combo', 'Chained taps multiply the [jolt] Jolt, up to ×25.')}
+      ${row('bolt', 'Energy', 'Scrap from kills plus [reactor] Reactor income. Buys machines.')}
+      ${row('rift', 'Hull', 'The Spire life bar. No regen — protect it.')}
+      ${row('shield', 'Shield', 'Absorbs damage first and regenerates over time.')}
+      ${row('sparkles', 'Combo', 'Chained [jolt] Zap hits multiply damage, up to ×25.')}
     </div>
     <div class="info-sec">
       <h3>${icon('jolt')} CONTROLS</h3>
-      ${row('jolt', 'Tap the Rift', 'Manual [bolt] Energy. Tap fast to build a combo.')}
-      ${row('cog', 'Tap a Node', 'Buys that machine. It glows when you can afford it.')}
-      ${row('steam', 'Tap the Vent', 'Dumps ' + VENT_AMOUNT + ' [flame] Heat. ' + VENT_CD + 's cooldown.')}
+      ${row('jolt', 'Tap an enemy', 'Zaps it from the Spire. Tap fast to build a combo.')}
+      ${row('cog', 'Tap a corner node', 'Buys that machine. It glows when affordable.')}
+      ${row('nova', 'Tap the Nova port', 'Blasts and knocks back every enemy. ' + NOVA_CD + 's cooldown.')}
     </div>
     <div class="info-sec">
       <h3>${icon('cog')} MACHINES</h3>
@@ -407,7 +504,7 @@ function buildInfo() {
     </div>
     <div class="info-sec">
       <h3>${icon('cards')} CARD TAGS</h3>
-      <p>${iconize('At milestones you draft 1 of 3 [cards] Cards. Cards share tags, and several scale with how many of a tag you own — commit to a build.')}</p>
+      <p>${iconize('After every wave you draft 1 of 3 [cards] Cards. Cards share tags, and several scale with how many of a tag you own — commit to a build.')}</p>
       ${tags}
     </div>`;
 }
@@ -430,11 +527,11 @@ function endStats() {
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
   return `
     <div>Time <span>${mins}:${String(secs).padStart(2, '0')}</span></div>
-    <div>${icon('bolt')} generated <span>${fmt(S.earned)}</span></div>
-    <div>${icon('rift')} charge <span>${Math.floor(S.charge / GOAL * 100)}%</span></div>
+    <div>${icon('hazard')} waves survived <span>${S.ending === 'win' ? MAX_WAVE : S.wave - 1}/${MAX_WAVE}</span></div>
+    <div>${icon('skull')} kills <span>${S.kills}</span></div>
+    <div>${icon('bolt')} earned <span>${fmt(S.earned)}</span></div>
     <div>${icon('cards')} cards <span>${S.cards.length}</span></div>
-    <div>${icon('cog')} machines <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>
-    <div>${icon('steam')} vented <span>${Math.floor(S.totalVented)}</span></div>`;
+    <div>${icon('cog')} machines <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>`;
 }
 
 function prepEnd(title, cls, desc) {
@@ -454,7 +551,7 @@ function win() {
   fx.flash('180,240,255', 0.75);
   fx.ring('#4dd8ff', 6); fx.ring('#ffffff', 3);
   fx.nova('#4dd8ff', 130);
-  prepEnd(icon('rift') + ' RIFT STABILIZED', 'win', 'The rift hums, tamed by your machines.');
+  prepEnd(icon('rift') + ' SPIRE STANDS', 'win', 'Ten waves broke against your machines.');
 }
 
 function lose() {
@@ -465,7 +562,7 @@ function lose() {
   buzz([80, 50, 80, 50, 220]);
   fx.flash('255,60,30', 0.85);
   fx.nova('#ff5c4d', 90);
-  prepEnd(icon('skull') + ' MELTDOWN', 'lose', 'The forge ran too hot.');
+  prepEnd(icon('skull') + ' SPIRE FALLS', 'lose', 'The swarm chewed through the hull on wave ' + S.wave + '.');
 }
 
 // ---------- UI ----------
@@ -500,38 +597,31 @@ function renderChips() {
 
 function renderHUD(R) {
   $id('energy').textContent = fmt(S.energy);
-  $id('eps').textContent = fmt(R.eps);
+  $id('eps').textContent = fmt(R.income);
 
-  const heatNet = R.heatIn - R.heatOut;
-  $id('heatfill').style.width = (S.heat / HEAT_CAP * 100) + '%';
-  $id('heatval').textContent = Math.floor(S.heat);
-  $id('heatnet').textContent = (heatNet >= 0 ? '+' : '') + heatNet.toFixed(1) + '/s';
-  $id('heatnet').style.color = heatNet > 0 ? 'var(--heat)' : 'var(--good)';
+  $id('hullfill').style.width = (S.hull / HULL_MAX * 100) + '%';
+  $id('hullval').textContent = Math.ceil(S.hull);
+  document.querySelector('.hullbar').classList.toggle('crit', S.hull < 30 && !S.over);
 
-  const pct = Math.min(100, S.charge / GOAL * 100);
-  $id('chargefill').style.width = pct + '%';
-  $id('chargeval').textContent = pct.toFixed(1) + '%';
-  $id('chargerate').textContent = S.counts.injector > 0
-    ? '· ' + fmt(Math.min(R.channel, R.eps) * R.chargeMult) + '/s'
-    : '· build Injectors!';
+  const sm = shieldMax();
+  $id('shieldfill').style.width = (S.shield / sm * 100) + '%';
+  $id('shieldval').textContent = Math.ceil(S.shield) + '/' + Math.ceil(sm);
+  $id('shieldrate').textContent = '+' + R.regen.toFixed(1) + '/s';
 
   const mins = Math.floor(S.time / 60), secs = Math.floor(S.time % 60);
-  $id('clock').textContent = mins + ':' + String(secs).padStart(2, '0');
+  $id('clock').textContent = 'W' + Math.min(S.wave, MAX_WAVE) + '/' + MAX_WAVE + ' · ' + mins + ':' + String(secs).padStart(2, '0');
 
-  document.querySelector('.heatbar').classList.toggle('crit', S.heat > 85 && !S.over);
-
-  // meltdown warning
   const warn = $id('meltwarn');
-  if (S.heat >= HEAT_CAP && !S.over) {
+  if (S.hull < 30 && !S.over) {
     warn.classList.remove('hidden');
-    $id('meltcount').textContent = Math.max(0, MELT_TIME - S.melt).toFixed(1);
+    $id('meltcount').textContent = Math.ceil(S.hull);
   } else {
     warn.classList.add('hidden');
   }
 }
 
 /* =========================================================
-   Canvas — the rift
+   Canvas — the Spire and the swarm
    ========================================================= */
 const cv = $id('rift');
 const ctx = cv.getContext('2d');
@@ -547,10 +637,11 @@ function resize() {
 window.addEventListener('resize', resize);
 
 const particles = [];
-const arcs = [];   // lightning bolts: origin point, decaying life
-const rings = [];  // expanding feedback rings
-let flashFx = null; // fullscreen tint: { c: 'r,g,b', a }
-let spawnAcc = 0, emberAcc = 0, chanAcc = 0, frostAcc = 0;
+const arcs = [];   // lightning: from (x,y) to (tx,ty)
+const beams = [];  // straight turret shots
+const rings = [];
+let flashFx = null;
+let spawnAcc = 0;
 
 function spawn(x, y, vx, vy, life, c, mode, size) {
   if (particles.length > 400) return;
@@ -559,29 +650,11 @@ function spawn(x, y, vx, vy, life, c, mode, size) {
 
 const fx = {
   ring(c, lw) { rings.push({ t: 1, c, lw: lw || 3 }); },
-  pulse(c) { this.ring(c, 3); },
   flash(rgb, a) { flashFx = { c: rgb, a }; },
-  bolt(x, y) { arcs.push({ x, y, t: 0.18, max: 0.18 }); },
-  burst(c) {
-    const cx = W / 2, cy = H / 2;
-    for (let i = 0; i < 10; i++) {
-      const a = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 90;
-      spawn(cx + Math.cos(a) * 30, cy + Math.sin(a) * 30, Math.cos(a) * sp, Math.sin(a) * sp, 0.6, c || '#ffd75c', 'out');
-    }
-  },
   burstAt(x, y, c, n) {
     for (let i = 0; i < (n || 8); i++) {
       const a = Math.random() * Math.PI * 2, sp = 50 + Math.random() * 80;
       spawn(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.55, c, 'out');
-    }
-  },
-  steam() {
-    const cx = W / 2, cy = H / 2;
-    this.ring('#8ad8ff', 4);
-    this.flash('140,220,255', 0.18);
-    for (let i = 0; i < 26; i++) {
-      const a = Math.random() * Math.PI * 2, sp = 90 + Math.random() * 130;
-      spawn(cx, cy, Math.cos(a) * sp, Math.sin(a) * sp, 0.8, i % 3 ? '#dff4ff' : '#8ad8ff', 'out', 2 + Math.random() * 3);
     }
   },
   nova(c, n) {
@@ -593,16 +666,16 @@ const fx = {
   },
 };
 
-// ---- world nodes: machines + vent live inside the canvas ----
-const NODE_ORDER = ['cooler', 'injector', 'dynamo', 'turbine'];
+// ---- world nodes ----
+const NODE_ORDER = ['shield', 'tesla', 'reactor', 'turret'];
 function nodeLayout() {
   const r = Math.max(24, Math.min(32, Math.min(W, H) * 0.08));
   return {
-    cooler:   { x: W * 0.15, y: H * 0.15, r },
-    injector: { x: W * 0.85, y: H * 0.15, r },
-    dynamo:   { x: W * 0.15, y: H * 0.80, r },
-    turbine:  { x: W * 0.85, y: H * 0.80, r },
-    vent:     { x: W * 0.50, y: H * 0.90, r: r * 0.9 },
+    shield:  { x: W * 0.15, y: H * 0.15, r },
+    tesla:   { x: W * 0.85, y: H * 0.15, r },
+    reactor: { x: W * 0.15, y: H * 0.80, r },
+    turret:  { x: W * 0.85, y: H * 0.80, r },
+    nova:    { x: W * 0.50, y: H * 0.90, r: r * 0.9 },
   };
 }
 
@@ -626,14 +699,14 @@ function drawIcon(name, x, y, size, color, alpha) {
 
 function hitNode(x, y) {
   const L = nodeLayout();
-  for (const key of [...NODE_ORDER, 'vent']) {
+  for (const key of [...NODE_ORDER, 'nova']) {
     const n = L[key];
     if (Math.hypot(x - n.x, y - n.y) < n.r * 1.45) return key;
   }
   return null;
 }
 
-let prevVentCd = 0, ventFlash = 0;
+let prevNovaCd = 0, novaFlash = 0;
 function drawNodes(dt, t) {
   const L = nodeLayout();
   const active = !S.paused && !S.over;
@@ -660,14 +733,12 @@ function drawNodes(dt, t) {
 
     drawIcon(m.icon, n.x, n.y, n.r * 1.1 * sc, can ? col : '#4a4a6e');
 
-    // count badge
     if (S.counts[key] > 0) {
       ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#e8e8f5';
       ctx.fillText('×' + S.counts[key], n.x, n.y - n.r - 6);
     }
-    // cost
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = can ? '#ffd75c' : '#55557a';
@@ -676,40 +747,34 @@ function drawNodes(dt, t) {
     drawIcon('bolt', n.x + ctx.measureText(label).width / 2 + 1, n.y + n.r + 11, 11, can ? '#ffd75c' : '#55557a');
   }
 
-  // vent port
-  const v = L.vent;
-  nodePulse.vent = Math.max(0, nodePulse.vent - dt * 3);
-  const vsc = 1 + nodePulse.vent * 0.3;
-  const ready = active && S.ventCd <= 0;
-  if (prevVentCd > 0 && S.ventCd <= 0 && active) { ventFlash = 1; buzz(10); }
-  prevVentCd = S.ventCd;
-  ventFlash = Math.max(0, ventFlash - dt * 2.5);
+  // nova port
+  const v = L.nova;
+  nodePulse.nova = Math.max(0, nodePulse.nova - dt * 3);
+  const vsc = 1 + nodePulse.nova * 0.3;
+  const ready = active && S.novaCd <= 0;
+  if (prevNovaCd > 0 && S.novaCd <= 0 && active) { novaFlash = 1; buzz(10); }
+  prevNovaCd = S.novaCd;
+  novaFlash = Math.max(0, novaFlash - dt * 2.5);
 
   ctx.beginPath();
   ctx.arc(v.x, v.y, v.r * vsc, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(16,16,31,0.85)';
   ctx.fill();
   if (ready) {
-    ctx.shadowColor = S.heat > 70 ? '#5cff9d' : '#8ad8ff';
-    ctx.shadowBlur = 8 + Math.sin(t * 5) * 4 + ventFlash * 14;
+    ctx.shadowColor = enemies.length > 3 ? '#5cff9d' : '#8ad8ff';
+    ctx.shadowBlur = 8 + Math.sin(t * 5) * 4 + novaFlash * 14;
   }
-  ctx.strokeStyle = ready ? (S.heat > 70 ? '#5cff9d' : '#8ad8ff') : '#2a2a45';
+  ctx.strokeStyle = ready ? (enemies.length > 3 ? '#5cff9d' : '#8ad8ff') : '#2a2a45';
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.shadowBlur = 0;
-  drawIcon('steam', v.x, v.y, v.r * 1.1 * vsc, ready ? '#8ad8ff' : '#4a4a6e');
-  if (S.ventCd > 0) {
-    // cooldown sweep
+  drawIcon('nova', v.x, v.y, v.r * 1.1 * vsc, ready ? '#8ad8ff' : '#4a4a6e');
+  if (S.novaCd > 0) {
     ctx.beginPath();
-    ctx.arc(v.x, v.y, v.r + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - S.ventCd / VENT_CD));
+    ctx.arc(v.x, v.y, v.r + 3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - S.novaCd / NOVA_CD));
     ctx.strokeStyle = '#8ad8ff';
     ctx.lineWidth = 2;
     ctx.stroke();
-  } else {
-    ctx.font = 'bold 10px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#8ad8ff';
-    ctx.fillText('−' + VENT_AMOUNT, v.x, v.y + v.r + 14);
   }
 }
 
@@ -734,117 +799,120 @@ function jagged(x1, y1, x2, y2, alpha) {
   ctx.globalAlpha = 1;
 }
 
+function drawEnemy(en, t) {
+  const cx = W / 2, cy = H / 2;
+  const ang = Math.atan2(cy - en.y, cx - en.x) + Math.sin(t * 3 + en.wob) * 0.1;
+  ctx.save();
+  ctx.translate(en.x, en.y);
+  ctx.rotate(ang);
+  const s = en.size;
+  ctx.beginPath();
+  if (en.brute) {
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * s, Math.sin(a) * s);
+    }
+  } else {
+    // dart pointing at the Spire
+    ctx.moveTo(s, 0);
+    ctx.lineTo(-s * 0.8, s * 0.65);
+    ctx.lineTo(-s * 0.4, 0);
+    ctx.lineTo(-s * 0.8, -s * 0.65);
+  }
+  ctx.closePath();
+  ctx.fillStyle = en.flash > 0 ? '#ffffff' : (en.brute ? '#ff5c4d' : '#ff9d4d');
+  ctx.fill();
+  ctx.restore();
+
+  // hp sliver once damaged
+  if (en.hp < en.max) {
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.fillRect(en.x - s, en.y - s - 6, s * 2, 3);
+    ctx.fillStyle = '#5cff9d';
+    ctx.fillRect(en.x - s, en.y - s - 6, s * 2 * Math.max(0, en.hp / en.max), 3);
+  }
+}
+
 function drawRift(dt) {
   ctx.clearRect(0, 0, W, H);
   if (!S) return;
-  const R = calc();
   const cx = W / 2, cy = H / 2;
-  const rad = Math.min(W, H) * 0.32;
+  const coreR = Math.min(W, H) * 0.13;
   const t = performance.now() / 1000;
-  const heatFrac = S.heat / HEAT_CAP;
-  const chargeFrac = Math.min(1, S.charge / GOAL);
-  const channeling = !S.paused && !S.over && S.counts.injector > 0 && S.energy > 1;
+  const hullFrac = S.hull / HULL_MAX;
+  const shieldFrac = S.shield / shieldMax();
 
-  // shake: meltdown countdown > high-heat tremor > lose sequence
+  // shake when taking hull damage or during the lose sequence
   let shake = 0;
-  if (S.melt > 0) shake = 8;
-  else if (S.heat > 85 && !S.over) shake = (S.heat - 85) / 15 * 3;
+  if (S.hitT > 0) shake = 5;
   if (S.ending === 'lose' && S.endT < 1) shake = 12 * (1 - S.endT);
   ctx.save();
   ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake);
 
-  // heat glow background
-  if (heatFrac > 0.05) {
-    const g = ctx.createRadialGradient(cx, cy, rad * 0.2, cx, cy, Math.max(W, H) * 0.8);
-    g.addColorStop(0, `rgba(255,60,30,${heatFrac * 0.35})`);
+  // danger glow grows as hull drops
+  if (hullFrac < 0.6) {
+    const g = ctx.createRadialGradient(cx, cy, coreR, cx, cy, Math.max(W, H) * 0.8);
+    g.addColorStop(0, `rgba(255,60,30,${(0.6 - hullFrac) * 0.5})`);
     g.addColorStop(1, 'rgba(255,60,30,0)');
     ctx.fillStyle = g;
     ctx.fillRect(-10, -10, W + 20, H + 20);
   }
 
-  // rift core: swirling arcs (spin faster as charge grows)
-  const spin = 1 + chargeFrac * 1.6 + (S.ending === 'win' ? S.endT * 6 : 0);
+  // Spire core
+  const spin = 1 + (1 - hullFrac) + (S.ending === 'win' ? S.endT * 6 : 0);
   for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    const rr = rad * (0.55 + i * 0.12);
+    const rr = coreR * (0.72 + i * 0.16);
     const off = t * (0.6 + i * 0.35) * spin * (i % 2 ? -1 : 1);
     ctx.arc(cx, cy, rr, off, off + Math.PI * (1.1 + 0.3 * Math.sin(t + i)));
     ctx.strokeStyle = `rgba(124,92,255,${0.5 - i * 0.12})`;
     ctx.lineWidth = 2.5 - i * 0.5;
     ctx.stroke();
   }
-
-  // inner glow scales with charge; heartbeat pulse as it fills
-  const beat = 1 + Math.sin(t * (2 + chargeFrac * 6)) * 0.05 * chargeFrac;
-  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad * 0.5 * beat);
-  g2.addColorStop(0, `rgba(77,216,255,${0.25 + chargeFrac * 0.6})`);
-  g2.addColorStop(1, 'rgba(77,216,255,0)');
+  const beat = 1 + Math.sin(t * 2.5) * 0.04;
+  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR * beat);
+  g2.addColorStop(0, `rgba(124,92,255,${0.3 + hullFrac * 0.4})`);
+  g2.addColorStop(1, 'rgba(124,92,255,0)');
   ctx.fillStyle = g2;
   ctx.beginPath();
-  ctx.arc(cx, cy, rad * 0.5 * beat, 0, Math.PI * 2);
+  ctx.arc(cx, cy, coreR * beat, 0, Math.PI * 2);
   ctx.fill();
+  drawIcon('rift', cx, cy, coreR * 0.9, `rgba(200,180,255,${0.5 + hullFrac * 0.5})`);
 
-  // charge ring
-  ctx.beginPath();
-  ctx.arc(cx, cy, rad, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * chargeFrac);
-  ctx.strokeStyle = '#4dd8ff';
-  ctx.lineWidth = 4;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(cx, cy, rad, 0, Math.PI * 2);
-  ctx.strokeStyle = 'rgba(77,216,255,0.15)';
-  ctx.lineWidth = 4;
-  ctx.stroke();
-
-  // channeling: crackling arcs from the ring into the core
-  if (channeling && Math.random() < dt * (2 + S.counts.injector)) {
-    const a = Math.random() * Math.PI * 2;
-    arcs.push({ x: cx + Math.cos(a) * rad, y: cy + Math.sin(a) * rad, t: 0.14, max: 0.14 });
-  }
-  for (let i = arcs.length - 1; i >= 0; i--) {
-    const a = arcs[i];
-    a.t -= dt;
-    if (a.t <= 0) { arcs.splice(i, 1); continue; }
-    jagged(a.x, a.y, cx, cy, a.t / a.max);
+  // shield bubble: arc coverage = shield fraction
+  if (shieldFrac > 0.01) {
+    const bub = coreR * 1.45;
+    ctx.beginPath();
+    ctx.arc(cx, cy, bub, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * shieldFrac);
+    ctx.strokeStyle = `rgba(77,216,255,${0.5 + 0.3 * Math.sin(t * 4)})`;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, bub, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(77,216,255,0.12)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
   }
 
-  // production particles stream from the machines that make them
-  if (!S.paused && !S.over) {
+  // wave countdown during calm
+  if (S.phase === 'calm' && !S.paused && !S.over) {
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(232,232,245,0.8)';
+    ctx.fillText('WAVE ' + S.wave + ' IN ' + Math.ceil(S.calmT), cx, cy - coreR * 2);
+  }
+
+  // enemies
+  for (const en of enemies) drawEnemy(en, t);
+
+  // reactor income made visible: motes drift from the Reactor node to the Spire
+  if (!S.paused && !S.over && S.counts.reactor > 0) {
+    spawnAcc += dt * Math.min(20, 1 + S.counts.reactor);
     const L = nodeLayout();
-    spawnAcc += dt * Math.min(50, 2 + R.eps * 0.35);
-    const turbShare = S.counts.turbine > 0
-      ? (S.counts.turbine * MACHINES.turbine.eps) / Math.max(1, S.counts.turbine * MACHINES.turbine.eps + S.counts.dynamo * MACHINES.dynamo.eps)
-      : 0;
     while (spawnAcc >= 1) {
       spawnAcc--;
-      const src = L[Math.random() < turbShare ? 'turbine' : 'dynamo'];
-      spawn(src.x + (Math.random() - .5) * 18, src.y + (Math.random() - .5) * 18, 0, 0, 2.2,
-        Math.random() < heatFrac * 0.6 ? '#ff5c4d' : '#ffd75c', 'seek');
-    }
-    if (channeling) {
-      chanAcc += dt * Math.min(20, 3 + S.counts.injector * 2);
-      while (chanAcc >= 1) {
-        chanAcc--;
-        const src = L.injector;
-        spawn(src.x + (Math.random() - .5) * 14, src.y + (Math.random() - .5) * 14, 0, 0, 1.6, '#4dd8ff', 'seek');
-      }
-    }
-    if (S.counts.cooler > 0) {
-      frostAcc += dt * Math.min(8, 1 + S.counts.cooler * 0.5);
-      while (frostAcc >= 1) {
-        frostAcc--;
-        const src = L.cooler;
-        spawn(src.x + (Math.random() - .5) * 20, src.y + 6, (Math.random() - .5) * 12, -(15 + Math.random() * 25), 1.4, '#bfe9ff', 'out', 2);
-      }
-    }
-    // embers rise as the forge overheats
-    if (S.heat > 55) {
-      emberAcc += dt * ((S.heat - 55) / 45) * 22;
-      while (emberAcc >= 1) {
-        emberAcc--;
-        spawn(Math.random() * W, H + 4, 0, -(30 + Math.random() * 60), 1.9, Math.random() < 0.5 ? '#ff5c4d' : '#ff9d4d', 'ember', 2);
-      }
+      spawn(L.reactor.x + (Math.random() - .5) * 18, L.reactor.y + (Math.random() - .5) * 18, 0, 0, 2.2, '#ffd75c', 'seek');
     }
   }
 
@@ -857,12 +925,10 @@ function drawRift(dt) {
       const dist = Math.hypot(dx, dy) || 1;
       p.vx += (dx / dist) * 140 * dt;
       p.vy += (dy / dist) * 140 * dt;
-      if (dist < rad * 0.25) p.life = Math.min(p.life, 0.15);
+      if (dist < coreR * 0.6) p.life = Math.min(p.life, 0.15);
     } else if (p.mode === 'out') {
       p.vx *= 1 - 1.6 * dt;
       p.vy *= 1 - 1.6 * dt;
-    } else if (p.mode === 'ember') {
-      p.vx = Math.sin(p.life * 5 + p.max * 9) * 14;
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
     ctx.globalAlpha = Math.min(1, p.life / p.max * 2);
@@ -872,6 +938,29 @@ function drawRift(dt) {
   }
   ctx.globalAlpha = 1;
 
+  // turret beams
+  for (let i = beams.length - 1; i >= 0; i--) {
+    const b = beams[i];
+    b.t -= dt;
+    if (b.t <= 0) { beams.splice(i, 1); continue; }
+    ctx.globalAlpha = b.t / b.max;
+    ctx.strokeStyle = b.c;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // lightning arcs (zap + tesla)
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const a = arcs[i];
+    a.t -= dt;
+    if (a.t <= 0) { arcs.splice(i, 1); continue; }
+    jagged(a.x, a.y, a.tx, a.ty, a.t / a.max);
+  }
+
   drawNodes(dt, t);
 
   // feedback rings
@@ -880,7 +969,7 @@ function drawRift(dt) {
     rg.t -= dt * 1.8;
     if (rg.t <= 0) { rings.splice(i, 1); continue; }
     ctx.beginPath();
-    ctx.arc(cx, cy, rad * (0.5 + (1 - rg.t) * 1.4), 0, Math.PI * 2);
+    ctx.arc(cx, cy, coreR * (1 + (1 - rg.t) * 3.2), 0, Math.PI * 2);
     ctx.strokeStyle = rg.c;
     ctx.globalAlpha = rg.t;
     ctx.lineWidth = rg.lw;
@@ -888,7 +977,6 @@ function drawRift(dt) {
     ctx.globalAlpha = 1;
   }
 
-  // fullscreen flash tint
   if (flashFx) {
     flashFx.a -= dt * 1.6;
     if (flashFx.a <= 0) flashFx = null;
@@ -921,22 +1009,24 @@ function beep(freq, dur, type, vol) {
 }
 const PENTA = [0, 2, 4, 7, 9];
 const sfx = {
-  click: () => beep(660, 0.07, 'square', 0.04),
   tap: combo => {
     const st = PENTA[(combo - 1) % 5] + 12 * Math.min(2, Math.floor((combo - 1) / 5));
     beep(392 * Math.pow(2, st / 12), 0.07, 'square', 0.045);
   },
+  shot: () => beep(880, 0.04, 'square', 0.02),
+  kill: brute => beep(brute ? 180 : 240, 0.12, 'sawtooth', 0.05),
+  tesla: () => { beep(700, 0.08, 'sawtooth', 0.04); setTimeout(() => beep(500, 0.08, 'sawtooth', 0.03), 60); },
+  nova: () => { beep(200, 0.4, 'sawtooth', 0.07); setTimeout(() => beep(300, 0.3, 'triangle', 0.05), 100); },
+  wave: () => { beep(330, 0.15, 'square', 0.05); setTimeout(() => beep(262, 0.2, 'square', 0.05), 150); },
   buyTone: key => {
-    const f = { dynamo: 494, turbine: 392, cooler: 659, injector: 587 }[key] || 520;
+    const f = { reactor: 494, turret: 392, shield: 659, tesla: 587 }[key] || 520;
     beep(f, 0.09, 'triangle', 0.06);
     setTimeout(() => beep(f * 1.5, 0.08, 'triangle', 0.05), 70);
   },
   chime: () => { beep(880, 0.12); setTimeout(() => beep(1318, 0.2), 100); },
   hold: p => beep(300 + p * 500, 0.05, 'triangle', 0.03),
-  vent: () => beep(220, 0.25, 'sawtooth', 0.05),
   draft: () => { beep(440, 0.12); setTimeout(() => beep(660, 0.12), 110); },
   pick: () => { beep(523, 0.1); setTimeout(() => beep(784, 0.15), 90); },
-  alarm: () => beep(880, 0.15, 'square', 0.05),
   win: () => [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.25), i * 140)),
   lose: () => [330, 262, 196, 131].forEach((f, i) => setTimeout(() => beep(f, 0.3, 'sawtooth'), i * 180)),
 };
@@ -945,15 +1035,10 @@ const sfx = {
    Main loop & wiring
    ========================================================= */
 let last = performance.now();
-let alarmAcc = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   tick(dt);
-  if (S && S.melt > 0 && !S.over) {
-    alarmAcc += dt;
-    if (alarmAcc > 0.5) { alarmAcc = 0; sfx.alarm(); }
-  }
   if (S && S.ending && !S.endShown) {
     S.endT += dt;
     if (S.endT > 1.2) { S.endShown = true; show('end-panel'); }
@@ -967,15 +1052,14 @@ cv.addEventListener('pointerdown', e => {
   if (e.button || !S || S.paused || S.over) return;
   const r = cv.getBoundingClientRect();
   const key = hitNode(e.clientX - r.left, e.clientY - r.top);
-  if (key === 'vent') return vent(e);
+  if (key === 'nova') return nova(e);
   if (key) return buy(key, false, e);
-  jolt(e);
+  zap(e);
 });
 
 // block pinch-zoom, double-tap zoom, long-press menus and the iOS text magnifier.
 // Game controls fire on pointerdown (dispatched before touchstart's default),
-// so cancelling touchstart outside overlay panels is safe; panels keep
-// click + scroll behavior.
+// so cancelling touchstart outside overlay panels is safe.
 document.addEventListener('touchstart', e => {
   if (!e.target.closest('.panel')) e.preventDefault();
 }, { passive: false });
@@ -984,6 +1068,7 @@ document.addEventListener('gesturechange', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener('dblclick', e => e.preventDefault());
 document.addEventListener('contextmenu', e => e.preventDefault());
+
 $id('infobtn').addEventListener('click', openInfo);
 $id('introinfo').addEventListener('click', openInfo);
 $id('infoclose').addEventListener('click', closeInfo);

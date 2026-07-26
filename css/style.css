@@ -114,10 +114,11 @@ html, body {
   overflow: hidden;
 }
 .bar-fill { height: 100%; width: 0%; transition: width .15s linear; }
-.heatbar .bar-fill { background: linear-gradient(90deg, #7a2a1a, var(--heat)); }
-.heatbar.crit { animation: critpulse .5s infinite; border-color: var(--heat); }
+.hullbar .bar-fill { background: linear-gradient(90deg, #1d5c38, var(--good)); }
+.hullbar.crit { animation: critpulse .5s infinite; border-color: var(--heat); }
+.hullbar.crit .bar-fill { background: linear-gradient(90deg, #7a2a1a, var(--heat)); }
 @keyframes critpulse { 50% { box-shadow: 0 0 14px rgba(255,92,77,.6); } }
-.chargebar .bar-fill { background: linear-gradient(90deg, #1a4a7a, var(--charge)); }
+.shieldbar .bar-fill { background: linear-gradient(90deg, #1a4a7a, var(--charge)); }
 .bar-label {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center; gap: 6px;
@@ -125,9 +126,9 @@ html, body {
   text-shadow: 0 1px 2px rgba(0,0,0,.8);
 }
 .bar-label .gi { font-size: 13px; }
-.heatbar .bar-label .gi { color: var(--heat); }
-.chargebar .bar-label .gi { color: var(--charge); }
-#heatnet, #chargerate { color: var(--dim); }
+.hullbar .bar-label .gi { color: var(--good); }
+.shieldbar .bar-label .gi { color: var(--charge); }
+#shieldrate { color: var(--dim); }
 
 /* ---------- actions ---------- */
 #actions { display: flex; gap: 8px; padding: 6px 12px; }

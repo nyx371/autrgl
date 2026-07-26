@@ -1,19 +1,20 @@
 # 🌀 RIFTFORGE
 
-An automation roguelike for mobile web. Pure vanilla HTML/CSS/JS + canvas — no build step, no dependencies.
+An automation defense roguelike for mobile web. Pure vanilla HTML/CSS/JS + canvas — no build step, no dependencies.
 
 **Play:** https://nyx371.github.io/autrgl/
 
 ## The loop
 
-You're powering up an unstable rift.
+Defend the Rift Spire at the center of the screen.
 
-- ⚡ **Machines generate energy automatically.** Dynamos and Turbines make the numbers climb.
-- 🌀 **Injectors channel energy into the rift.** Get the rift to **100% charge → you win.**
-- 🔥 **Everything makes heat**, and ambient instability rises every minute. Sit at 100 heat for 4 seconds → **meltdown, you lose.** Coolers and the manual Vent button keep you alive.
-- 🃏 **At milestones you draft 1 of 3 cards.** Cards carry synergy tags — 🔥 Overclock, ❄️ Cryo, 🌀 Flux, ⚙️ Auto — and several cards scale with how many of a tag you own, so runs push you toward committing to a build.
+- 👾 **Enemies swarm in from the edges** and gnaw the Spire's shield, then its hull. Hull 0 = loss. **Survive 10 waves = win.**
+- ⚡ **Tap enemies to zap them** — chained hits build a combo multiplier up to ×25.
+- ⚙️ **Machines are tappable nodes in the world**: Reactors (income), Turrets (auto-fire), Shield Gens (max shield + regen), Tesla Coils (chain lightning). Energy comes from kills + Reactors.
+- 💥 **The Nova port** blasts and knocks back every enemy on a cooldown — the panic button.
+- 🃏 **After every wave you draft 1 of 3 cards** (press-and-hold to confirm). Tags — 🔥 Overclock, 🛡 Aegis, ⚡ Storm, ⚙️ Auto — synergise and several cards scale with tag counts, pushing each run toward a build.
 
-The core tension: production makes heat, cooling costs energy that could be production, and charging drains the energy you'd spend on both. Every run is a race between your charge rate and the rising instability.
+The core tension: spend energy on economy (Reactors) or defense (everything else), zap manually or trust the automation, and pick cards that compound.
 
 ## Development
 

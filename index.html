@@ -20,7 +20,7 @@
 
   <div id="canvaswrap">
     <canvas id="rift"></canvas>
-    <div id="meltwarn" class="hidden"><i data-icon="hazard"></i><span id="meltcount">4.0</span>s — VENT!</div>
+    <div id="meltwarn" class="hidden"><i data-icon="hazard"></i>HULL <span id="meltcount">30</span> — DEFEND!</div>
   </div>
 
   <section id="stats">
@@ -28,13 +28,13 @@
       <div class="energy-big"><span id="energy">0</span><i data-icon="bolt"></i></div>
       <div class="eps"><span id="eps">0</span><i data-icon="bolt"></i>/s</div>
     </div>
-    <div class="bar heatbar">
-      <div class="bar-fill" id="heatfill"></div>
-      <div class="bar-label"><i data-icon="flame"></i> <span id="heatval">0</span> <span id="heatnet"></span></div>
+    <div class="bar hullbar">
+      <div class="bar-fill" id="hullfill"></div>
+      <div class="bar-label"><i data-icon="rift"></i> HULL <span id="hullval">100</span></div>
     </div>
-    <div class="bar chargebar">
-      <div class="bar-fill" id="chargefill"></div>
-      <div class="bar-label"><i data-icon="rift"></i> <span id="chargeval">0%</span> <span id="chargerate"></span></div>
+    <div class="bar shieldbar">
+      <div class="bar-fill" id="shieldfill"></div>
+      <div class="bar-label"><i data-icon="shield"></i> <span id="shieldval">30/30</span> <span id="shieldrate"></span></div>
     </div>
   </section>
 
@@ -42,13 +42,13 @@
   <div id="overlay" class="overlay">
     <div class="panel" id="intro-panel">
       <h1>RIFT<span>FORGE</span></h1>
-      <p class="tagline">An automation roguelike.</p>
+      <p class="tagline">An automation defense roguelike.</p>
       <ul class="rules">
-        <li><i data-icon="jolt" class="li-icon c-energy"></i>Tap the rift to jolt energy. Chain taps for combos.</li>
-        <li><i data-icon="cog" class="li-icon c-accent"></i>Tap the orbiting nodes to build machines. They run themselves.</li>
-        <li><i data-icon="rift" class="li-icon c-charge"></i>Injectors charge the rift. 100% wins.</li>
-        <li><i data-icon="steam" class="li-icon c-charge"></i>Tap the vent port to dump heat. Max heat = meltdown.</li>
-        <li><i data-icon="cards" class="li-icon c-accent"></i>Draft cards. Stack tags.</li>
+        <li><i data-icon="hazard" class="li-icon c-heat"></i>Enemies swarm in from the edges to eat your Spire.</li>
+        <li><i data-icon="jolt" class="li-icon c-energy"></i>Tap enemies to zap them. Chain hits for combos.</li>
+        <li><i data-icon="cog" class="li-icon c-accent"></i>Tap corner nodes to build machines. They fight for you.</li>
+        <li><i data-icon="nova" class="li-icon c-charge"></i>Tap the nova port to blast everything back.</li>
+        <li><i data-icon="cards" class="li-icon c-accent"></i>Survive 10 waves. Draft cards between them.</li>
       </ul>
       <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
       <button class="ghost-btn" id="introinfo"><i data-icon="help"></i> HOW TO PLAY</button>
