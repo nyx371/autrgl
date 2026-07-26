@@ -192,6 +192,26 @@ html, body {
 }
 .bs-nova.ready { animation: readypulse .45s; }
 
+/* build tooltip: shown while a purchase is armed */
+#buildtip {
+  position: absolute;
+  left: 12px; right: 12px; bottom: 10px;
+  background: rgba(16,16,31,.95);
+  border: 1px solid var(--mcol, #33335c);
+  border-radius: 10px;
+  padding: 9px 12px;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 18px rgba(0,0,0,.5);
+}
+#buildtip .bt-name { font-weight: 700; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+#buildtip .bt-name .gi { font-size: 16px; }
+#buildtip .bt-owned { margin-left: auto; color: var(--dim); font-weight: 400; font-size: 11px; }
+#buildtip .bt-desc { color: #c0c0da; }
+#buildtip .bt-cost { color: var(--energy); font-weight: 700; display: flex; align-items: center; gap: 3px; }
+#buildtip .bt-cost em { font-style: normal; color: var(--heat); font-weight: 400; }
+
 /* stats rows: right-aligned values */
 .info-row em {
   margin-left: auto;

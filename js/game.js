@@ -268,7 +268,7 @@ function tick(dt) {
 
   // combo decay + cooldowns
   if (S.comboT > 0) { S.comboT -= dt; if (S.comboT <= 0) S.combo = 0; }
-  if (armedT > 0) { armedT -= dt; if (armedT <= 0) armedKey = null; }
+  if (armedT > 0) { armedT -= dt; if (armedT <= 0) disarm(); }
   S.novaCd = Math.max(0, S.novaCd - dt);
   if (S.hitT > 0) S.hitT -= dt;
 
@@ -612,8 +612,25 @@ function pickCard(id) {
   renderChips();
 }
 
-// ---------- build strip (double-tap to confirm a purchase) ----------
+// ---------- build strip (tap to inspect, tap again to confirm) ----------
 let armedKey = null, armedT = 0;
+
+function disarm() {
+  armedKey = null;
+  armedT = 0;
+  $id('buildtip').classList.add('hidden');
+}
+
+function showBuildTip(key) {
+  const m = MACHINES[key];
+  const tip = $id('buildtip');
+  tip.style.setProperty('--mcol', MACHINE_COLORS[key]);
+  tip.innerHTML =
+    `<div class="bt-name">${icon(m.icon)} ${m.name} <span class="bt-owned">×${S.counts[key]} owned</span></div>` +
+    `<div class="bt-desc">${iconize(m.desc)}</div>` +
+    `<div class="bt-cost">Cost ${fmt(cost(key))}${icon('bolt')}${S.energy < cost(key) ? ' — <em>not enough</em>' : ''}</div>`;
+  tip.classList.remove('hidden');
+}
 
 function buildStrip() {
   const strip = $id('buildstrip');
@@ -627,15 +644,16 @@ function buildStrip() {
       `<span class="bs-count">×${S.counts[key]}</span>` +
       icon(m.icon) +
       `<span class="bs-cost">${fmt(cost(key))}${icon('bolt')}</span>` +
-      `<span class="bs-confirm">AGAIN?</span>`;
+      `<span class="bs-confirm">CONFIRM</span>`;
     b.addEventListener('pointerdown', e => {
       if (e.button || !S || S.paused || S.over) return;
       if (armedKey === key) {
-        armedKey = null;
+        disarm();
         buy(key, false, e);
       } else {
         armedKey = key;
-        armedT = 1.6;
+        armedT = 5;
+        showBuildTip(key);
         beep(520, 0.05, 'triangle', 0.03);
         buzz(5);
       }
@@ -649,12 +667,17 @@ function buildStrip() {
     `<span class="bs-cd" id="bs-nova-cd"></span>` +
     icon('nova') +
     `<span class="bs-cost">NOVA</span>`;
-  nb.addEventListener('pointerdown', e => { if (e.button) return; nova(e); });
+  nb.addEventListener('pointerdown', e => { if (e.button) return; disarm(); nova(e); });
   strip.appendChild(nb);
 }
 
 let lastNovaCd = 0;
+let lastTipRefresh = 0;
 function renderStrip() {
+  if (armedKey && performance.now() - lastTipRefresh > 250) {
+    lastTipRefresh = performance.now();
+    showBuildTip(armedKey);
+  }
   for (const key of Object.keys(MACHINES)) {
     const b = $id('bs-' + key);
     if (!b) continue;
@@ -757,7 +780,7 @@ function buildInfo() {
     <div class="info-sec">
       <h3>${icon('jolt')} CONTROLS</h3>
       ${row('jolt', 'Tap an enemy', 'Zaps it from the Spire. Tap fast to build a combo.')}
-      ${row('cog', 'Double-tap a build button', 'First tap arms it, second tap buys. It glows when affordable.')}
+      ${row('cog', 'Buy machines', 'Tap a build button to see cost + effect, tap it again to CONFIRM. Tap anywhere else to cancel.')}
       ${row('nova', 'Tap NOVA', 'Blasts and knocks back every enemy. ' + NOVA_CD + 's cooldown.')}
     </div>
     <div class="info-sec">
@@ -1327,6 +1350,7 @@ function frame(now) {
 
 cv.addEventListener('pointerdown', e => {
   if (e.button || !S || S.paused || S.over) return;
+  if (armedKey) return disarm(); // tapping outside closes the purchase confirm
   const r = cv.getBoundingClientRect();
   const x = e.clientX - r.left, y = e.clientY - r.top;
   for (const pk of pickups) {
@@ -1349,10 +1373,10 @@ document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preven
 document.addEventListener('dblclick', e => e.preventDefault());
 document.addEventListener('contextmenu', e => e.preventDefault());
 
-$id('statsbtn').addEventListener('click', openStats);
+$id('statsbtn').addEventListener('pointerdown', e => { if (!e.button) openStats(); });
 $id('statsclose').addEventListener('click', closeStats);
 $id('statsback').addEventListener('click', closeStats);
-$id('infobtn').addEventListener('click', openInfo);
+$id('infobtn').addEventListener('pointerdown', e => { if (!e.button) openInfo(); });
 $id('introinfo').addEventListener('click', openInfo);
 $id('infoclose').addEventListener('click', closeInfo);
 $id('infoback').addEventListener('click', closeInfo);

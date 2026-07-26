@@ -10,10 +10,10 @@
 // Single source of truth for the build version. Bump this AND the ?v=
 // query strings below together on every release — they cache-bust the
 // assets on GitHub Pages.
-window.GAME_VERSION = '0.1';
-window.GAME_TAGLINE = 'Spire defense: build strip, run stats & THE MAW';
+window.GAME_VERSION = '0.2';
+window.GAME_TAGLINE = 'Build previews, confirm-to-buy, always-on help';
 </script>
-<link rel="stylesheet" href="css/style.css?v=0.1">
+<link rel="stylesheet" href="css/style.css?v=0.2">
 </head>
 <body>
 <div id="app">
@@ -29,6 +29,7 @@ window.GAME_TAGLINE = 'Spire defense: build strip, run stats & THE MAW';
   <div id="canvaswrap">
     <canvas id="rift"></canvas>
     <div id="meltwarn" class="hidden"><i data-icon="hazard"></i>HULL <span id="meltcount">30</span> — DEFEND!</div>
+    <div id="buildtip" class="hidden"></div>
   </div>
 
   <section id="buildstrip"></section>
@@ -99,7 +100,7 @@ window.GAME_TAGLINE = 'Spire defense: build strip, run stats & THE MAW';
   </div>
 
 </div>
-<script src="js/icons.js?v=0.1"></script>
-<script src="js/game.js?v=0.1"></script>
+<script src="js/icons.js?v=0.2"></script>
+<script src="js/game.js?v=0.2"></script>
 </body>
 </html>
