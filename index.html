@@ -6,7 +6,14 @@
 <meta name="theme-color" content="#07070f">
 <title>RIFTFORGE</title>
 <link rel="icon" id="favicon" href="">
-<link rel="stylesheet" href="css/style.css">
+<script>
+// Single source of truth for the build version. Bump this AND the ?v=
+// query strings below together on every release — they cache-bust the
+// assets on GitHub Pages.
+window.GAME_VERSION = '0.1';
+window.GAME_TAGLINE = 'Spire defense: build strip, run stats & THE MAW';
+</script>
+<link rel="stylesheet" href="css/style.css?v=0.1">
 </head>
 <body>
 <div id="app">
@@ -55,6 +62,7 @@
       </ul>
       <button class="big-btn" id="startbtn">ENTER THE RIFT</button>
       <button class="ghost-btn" id="introinfo"><i data-icon="help"></i> HOW TO PLAY</button>
+      <p class="credits" id="verline"></p>
       <p class="credits">Icons: game-icons.net · CC BY 3.0</p>
     </div>
 
@@ -91,7 +99,7 @@
   </div>
 
 </div>
-<script src="js/icons.js"></script>
-<script src="js/game.js"></script>
+<script src="js/icons.js?v=0.1"></script>
+<script src="js/game.js?v=0.1"></script>
 </body>
 </html>

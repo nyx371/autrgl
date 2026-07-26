@@ -783,6 +783,10 @@ function buildInfo() {
       <h3>${icon('cards')} CARD TAGS</h3>
       <p>${iconize('After every wave you draft 1 of 3 [cards] Cards. Cards share tags, and several scale with how many of a tag you own — commit to a build.')}</p>
       ${tags}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('rift')} VERSION</h3>
+      <p><b>v${window.GAME_VERSION || 'dev'}</b> — ${window.GAME_TAGLINE || ''}</p>
     </div>`;
 }
 
@@ -1371,6 +1375,8 @@ document.querySelectorAll('[data-icon]').forEach(el => {
 });
 document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#7c5cff">${ICONS.rift}</svg>`);
+
+$id('verline').textContent = 'v' + (window.GAME_VERSION || 'dev') + ' — ' + (window.GAME_TAGLINE || '');
 
 newRun();
 buildStrip();

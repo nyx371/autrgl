@@ -39,4 +39,8 @@ Deploys to GitHub Pages via `.github/workflows/deploy.yml`: on push to the dev b
 - `js/icons.js` — inline SVG icons from [game-icons.net](https://game-icons.net) (Lorc, Delapouite & contributors, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/))
 - `js/game.js` — game state, tick loop, card definitions, canvas rendering, tiny WebAudio sfx
 
-All tuning constants (goal, heat cap, machine stats, card pool, draft triggers) live at the top of `js/game.js`.
+All tuning constants (waves, hull, machine stats, card pool) live at the top of `js/game.js`.
+
+## Releasing a version
+
+`index.html` is the single source of truth: bump `window.GAME_VERSION` / `window.GAME_TAGLINE` in the inline script **and** the matching `?v=` query strings on the three asset tags. The query strings cache-bust CSS/JS on GitHub Pages; the version + tagline show on the intro screen and in the help panel.
