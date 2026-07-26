@@ -212,6 +212,51 @@ html, body {
 #buildtip .bt-cost { color: var(--energy); font-weight: 700; display: flex; align-items: center; gap: 3px; }
 #buildtip .bt-cost em { font-style: normal; color: var(--heat); font-weight: 400; }
 
+/* the Forge */
+.forge-bank {
+  text-align: center;
+  font-size: 15px;
+  color: var(--text);
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.forge-bank .gi { font-size: 18px; }
+#forge-body { display: flex; flex-direction: column; gap: 9px; }
+.forge-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel2);
+  border: 1px solid #2a2a45;
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+.forge-row > .gi { font-size: 21px; flex-shrink: 0; }
+.forge-mid { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.forge-mid b { font-size: 13px; }
+.forge-mid span { font-size: 11px; color: var(--dim); }
+.pips { display: flex; gap: 3px; margin-top: 2px; }
+.pip {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  background: #23233c;
+  border: 1px solid #33335c;
+}
+.pip.on { background: #ff8fd8; border-color: #ff8fd8; box-shadow: 0 0 5px rgba(255,143,216,.5); }
+.forge-buy {
+  background: var(--panel);
+  border: 1px solid #33335c;
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 3px;
+  white-space: nowrap;
+}
+.forge-buy.can { border-color: #ff8fd8; color: var(--text); box-shadow: 0 0 8px rgba(255,143,216,.25); }
+.forge-buy:active { transform: scale(.94); }
+.forge-buy:disabled { opacity: .5; }
+
 /* stats rows: right-aligned values */
 .info-row em {
   margin-left: auto;

@@ -19,6 +19,8 @@ Defend the Rift Spire at the center of the screen.
 - 💎 **Drops**: kills sometimes leave a scrap crystal (⚡) or aegis orb (shield refill) — tap them before they fade, or draft Magnet Drones.
 - 🔶 **Overdrive**: kills charge a gold ring around the Spire; when full, tap the Spire for 6s of doubled firepower.
 - 🔧 **Field repair**: a few hull points patched after every cleared wave.
+- 👻 **Deep-run threats**: phantoms (phase in and out — turrets often miss, zaps never do), bombers (fast kamikazes that detonate on the Spire), and healers (pulse-heal nearby enemies — priority targets).
+- 💎 **The Forge (meta progression)**: every run pays Rift Shards — 1 per wave, +5 per boss kill, +30 for a win — spent on permanent upgrades (hull, starting energy/turrets, zap/turret damage, shields, scrap yield, nova cooldown) that persist in localStorage between runs.
 
 Every symbol keeps one canonical color everywhere it appears (HUD, cards, world, popups) so color alone identifies the concept.
 
