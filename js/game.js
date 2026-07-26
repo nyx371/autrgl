@@ -145,8 +145,8 @@ function newRun() {
     cards: [],
     combo: 0, comboT: 0, bestCombo: 0,
     novaCd: 0, teslaT: 0, turretAcc: 0, autoT: 0, thornT: 0, hitT: 0,
-    od: 0, odT: 0, odReadyPinged: false,
-    queue: [], mod: null,
+    od: 0, odT: 0, odReadyPinged: false, shieldHitT: 0,
+    queue: [], mod: null, waveTotal: 1,
     ending: null, endT: 0, endShown: false,
     paused: true, over: false,
   };
@@ -357,6 +357,7 @@ function nearestEnemy(x, y, maxDist) {
 function damageSpire(dmg) {
   const fromShield = Math.min(S.shield, dmg);
   S.shield -= fromShield;
+  if (fromShield > 0) S.shieldHitT = 0.25;
   dmg -= fromShield;
   if (dmg > 0) {
     S.hull -= dmg;
@@ -389,6 +390,7 @@ function tick(dt) {
   if (armedT > 0) { armedT -= dt; if (armedT <= 0) disarm(); }
   S.novaCd = Math.max(0, S.novaCd - dt);
   if (S.hitT > 0) S.hitT -= dt;
+  if (S.shieldHitT > 0) S.shieldHitT -= dt;
 
   // overdrive burn-down
   if (S.odT > 0) {
@@ -415,6 +417,7 @@ function tick(dt) {
     if (S.calmT <= 0) {
       S.phase = 'combat';
       S.queue = buildWave(S.wave);
+      S.waveTotal = S.queue.length;
       S.spawnLeft = S.queue.length;
       S.spawnT = 0;
       sfx.wave();
@@ -766,6 +769,8 @@ function openDraft() {
   draftOffer = pool.slice(0, 3);
   S.paused = true;
   sfx.draft();
+  $id('draft-sub').innerHTML = 'WAVE ' + (S.wave - 1) + ' CLEARED · NEXT: ' +
+    (S.mod ? '<b style="color:' + MODS[S.mod].color + '">' + MODS[S.mod].name + '</b>' : (BOSS_WAVES.includes(S.wave) ? '<b style="color:#ff2d6d">BOSS</b>' : 'WAVE ' + S.wave));
 
   const wrap = document.getElementById('draft-cards');
   wrap.innerHTML = '';
@@ -917,6 +922,7 @@ function renderStrip() {
   if (nb) {
     const ready = S.novaCd <= 0 && !S.paused && !S.over;
     nb.classList.toggle('can', ready);
+    nb.querySelector('.bs-cost').textContent = ready ? 'NOVA' : Math.ceil(S.novaCd) + 's';
     $id('bs-nova-cd').style.height = (S.novaCd / calc().novaCdMax * 100) + '%';
     if (lastNovaCd > 0 && S.novaCd <= 0 && !S.paused && !S.over) {
       nb.classList.add('ready');
@@ -1124,7 +1130,8 @@ function endStats() {
     <div>${icon('bolt')} earned <span>${fmt(S.earned)}</span></div>
     <div>${icon('cards')} cards <span>${S.cards.length}</span></div>
     <div>${icon('cog')} machines <span>${Object.values(S.counts).reduce((a, b) => a + b, 0)}</span></div>
-    <div>${icon('shard')} shards earned <span>+${lastShardGain}</span></div>`;
+    <div class="shardrow">${icon('shard')} shards earned <span>+${lastShardGain}</span></div>
+    <div>${icon('hazard')} best wave <span>${META.best || 0}${newBest ? ' — NEW BEST!' : ''}</span></div>`;
 }
 
 function prepEnd(title, cls, desc) {
@@ -1135,10 +1142,13 @@ function prepEnd(title, cls, desc) {
   document.getElementById('end-stats').innerHTML = endStats();
 }
 
-let lastShardGain = 0;
+let lastShardGain = 0, newBest = false;
 function awardShards() {
   lastShardGain = shardsForRun();
   META.shards += lastShardGain;
+  const reached = S.ending === 'win' ? MAX_WAVE : S.wave;
+  newBest = reached > (META.best || 0);
+  if (newBest) META.best = reached;
   saveMeta();
 }
 
@@ -1197,9 +1207,27 @@ function renderChips() {
   }
 }
 
+let dispEnergy = 0;
 function renderHUD(R) {
-  $id('energy').textContent = fmt(S.energy);
+  // energy rolls smoothly toward the real value
+  const diff = S.energy - dispEnergy;
+  dispEnergy = Math.abs(diff) < 1 ? S.energy : dispEnergy + diff * 0.15;
+  $id('energy').textContent = fmt(dispEnergy);
   $id('eps').textContent = fmt(R.income);
+  $id('shardchip').textContent = META.shards;
+
+  // wave progress: whole-run bar that also fills within the active wave
+  let frac = (S.wave - 1) / MAX_WAVE;
+  if (S.phase === 'combat' && S.waveTotal > 0) {
+    frac += (1 - Math.min(1, (S.queue.length + enemies.length) / S.waveTotal)) / MAX_WAVE;
+  }
+  if (S.ending === 'win') frac = 1;
+  $id('waveprogfill').style.width = (frac * 100) + '%';
+
+  document.querySelector('.hullbar').classList.toggle('hit', S.hitT > 0);
+  document.querySelector('.shieldbar').classList.toggle('hit', S.shieldHitT > 0);
+
+  $id('vignette').style.opacity = S.hull < 40 && !S.over ? ((40 - S.hull) / 40 * 0.85).toFixed(2) : 0;
 
   $id('hullfill').style.width = (S.hull / hullMax() * 100) + '%';
   $id('hullval').textContent = Math.ceil(S.hull);
@@ -1766,6 +1794,8 @@ $id('startbtn').addEventListener('click', () => {
 });
 $id('restartbtn').addEventListener('click', () => {
   newRun();
+  dispEnergy = S.energy;
+  $id('introbank').innerHTML = icon('shard') + ' ' + META.shards + ' shards' + (META.best ? ' · best wave ' + META.best : '');
   renderChips();
   hideOverlay();
   S.paused = false;
@@ -1780,6 +1810,7 @@ document.getElementById('favicon').href = 'data:image/svg+xml,' + encodeURICompo
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#7c5cff">${ICONS.rift}</svg>`);
 
 loadMeta();
+$id('introbank').innerHTML = icon('shard') + ' ' + META.shards + ' shards' + (META.best ? ' · best wave ' + META.best : '');
 $id('verline').textContent = 'v' + (window.GAME_VERSION || 'dev') + ' — ' + (window.GAME_TAGLINE || '');
 
 newRun();

@@ -10,10 +10,10 @@
 // Single source of truth for the build version. Bump this AND the ?v=
 // query strings below together on every release — they cache-bust the
 // assets on GitHub Pages.
-window.GAME_VERSION = '0.5';
-window.GAME_TAGLINE = 'Ascension: the Forge, shards, phantoms, bombers & healers';
+window.GAME_VERSION = '0.6';
+window.GAME_TAGLINE = 'Polish pass: live shards, wave bar, records & readability';
 </script>
-<link rel="stylesheet" href="css/style.css?v=0.5">
+<link rel="stylesheet" href="css/style.css?v=0.6">
 </head>
 <body>
 <div id="app">
@@ -21,13 +21,16 @@ window.GAME_TAGLINE = 'Ascension: the Forge, shards, phantoms, bombers & healers
   <header id="topbar">
     <div class="brand"><i data-icon="rift" class="brand-icon"></i>RIFT<span>FORGE</span></div>
     <div id="tagchips"></div>
+    <span class="chip shard-chip"><i data-icon="shard"></i><span id="shardchip">0</span></span>
     <div id="clock">0:00</div>
     <button id="statsbtn" class="icon-btn" aria-label="Stats"><i data-icon="stats"></i></button>
     <button id="infobtn" class="icon-btn" aria-label="How to play"><i data-icon="help"></i></button>
   </header>
+  <div id="waveprog"><div id="waveprogfill"></div></div>
 
   <div id="canvaswrap">
     <canvas id="rift"></canvas>
+    <div id="vignette"></div>
     <div id="meltwarn" class="hidden"><i data-icon="hazard"></i>HULL <span id="meltcount">30</span> — DEFEND!</div>
     <div id="buildtip" class="hidden"></div>
   </div>
@@ -54,6 +57,7 @@ window.GAME_TAGLINE = 'Ascension: the Forge, shards, phantoms, bombers & healers
     <div class="panel" id="intro-panel">
       <h1>RIFT<span>FORGE</span></h1>
       <p class="tagline">An automation defense roguelike.</p>
+      <p class="intro-meta" id="introbank"></p>
       <ul class="rules">
         <li><i data-icon="hazard" class="li-icon c-heat"></i>Enemies swarm in from the edges to eat your Spire.</li>
         <li><i data-icon="jolt" class="li-icon c-energy"></i>Tap enemies to zap them. Chain hits for combos.</li>
@@ -70,6 +74,7 @@ window.GAME_TAGLINE = 'Ascension: the Forge, shards, phantoms, bombers & healers
 
     <div class="panel hidden" id="draft-panel">
       <h2><i data-icon="cards"></i> CHOOSE ONE</h2>
+      <p class="draft-sub" id="draft-sub"></p>
       <p class="hint">Press and hold to confirm</p>
       <div id="draft-cards"></div>
     </div>
@@ -111,7 +116,7 @@ window.GAME_TAGLINE = 'Ascension: the Forge, shards, phantoms, bombers & healers
   </div>
 
 </div>
-<script src="js/icons.js?v=0.5"></script>
-<script src="js/game.js?v=0.5"></script>
+<script src="js/icons.js?v=0.6"></script>
+<script src="js/game.js?v=0.6"></script>
 </body>
 </html>
