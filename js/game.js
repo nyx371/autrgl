@@ -25,8 +25,23 @@ const ENEMY_TYPES = {
   dart:     { hp: 6,   speed: 38, spdVar: 14, dps: 4,  scrap: 3,   size: 7.5, color: '#ff9d4d' },
   splitter: { hp: 14,  speed: 28, spdVar: 6,  dps: 6,  scrap: 7,   size: 10,  color: '#b45cff' },
   brute:    { hp: 26,  speed: 21, spdVar: 5,  dps: 9,  scrap: 10,  size: 12,  color: '#ff5c4d' },
+  spitter:  { hp: 11,  speed: 30, spdVar: 6,  dps: 0,  scrap: 8,   size: 9,   color: '#63e0b8' },
   boss:     { hp: 550, speed: 9,  spdVar: 1,  dps: 22, scrap: 250, size: 26,  color: '#ff2d6d' },
 };
+const SPIT_INTERVAL = 2.6;  // seconds between spitter shots
+const SPIT_DMG = 6;
+const INTEREST_RATE = 0.10; // share of banked energy paid after each wave
+const interestCap = w => 25 + 15 * w;
+
+// wave modifiers: ~half of waves from 3 on roll one, announced during the calm
+const MODS = {
+  swarm:    { name: 'SWARM',     color: '#ff9d4d', desc: '+60% enemies, −30% HP' },
+  rush:     { name: 'RUSH',      color: '#ff5c4d', desc: 'enemies +40% speed' },
+  goldrush: { name: 'GOLD RUSH', color: '#ffd75c', desc: '2× [bolt] from kills' },
+  jammer:   { name: 'JAMMER',    color: '#b45cff', desc: '[shield] regen −60%' },
+  titans:   { name: 'TITANS',    color: '#ff2d6d', desc: 'brutes +60% HP, +1 elite' },
+};
+const modIs = k => S.mod === k;
 
 const MACHINES = {
   reactor: { name: 'Reactor',    icon: 'reactor', base: 20,  growth: 1.5,  desc: '+2[bolt]/s income' },
@@ -64,6 +79,7 @@ const CARDS = [
   { id: 'fieldrepair', name: 'Field Repair',    tags: ['AEGIS'], desc: '+8 extra hull repaired after each wave' },
   { id: 'magnet',      name: 'Magnet Drones',   tags: ['AUTO'],  desc: 'Drops fly to the Spire on their own' },
   { id: 'odcore',      name: 'Overdrive Core',  tags: ['STORM'], desc: '[flux] Overdrive lasts 4s longer' },
+  { id: 'compound',    name: 'Compound Core',   tags: ['AUTO'],  desc: 'Wave interest 10% → 25% of banked [bolt]', syn: 'Rewards saving up.' },
 ];
 
 // ---------- state ----------
@@ -81,14 +97,16 @@ function newRun() {
     combo: 0, comboT: 0, bestCombo: 0,
     novaCd: 0, teslaT: 0, turretAcc: 0, autoT: 0, thornT: 0, hitT: 0,
     od: 0, odT: 0, odReadyPinged: false,
-    queue: [],
+    queue: [], mod: null,
     ending: null, endT: 0, endShown: false,
     paused: true, over: false,
   };
   enemies.length = 0;
   pickups.length = 0;
+  shots.length = 0;
 }
 const pickups = [];
+const shots = []; // spitter projectiles
 
 const has = id => S.cards.includes(id);
 const tagCount = tag => S.cards.reduce((n, id) => n + (CARDS.find(c => c.id === id).tags.includes(tag) ? 1 : 0), 0);
@@ -112,7 +130,8 @@ function calc() {
   if (has('resonance')) teslaDmg *= 1 + 0.20 * tagCount('STORM');
   const teslaTargets = 2 + (has('chain') ? 2 : 0);
 
-  const regen = BASE_REGEN + S.counts.shield * 0.6 + (has('regenerator') ? 2 : 0);
+  let regen = BASE_REGEN + S.counts.shield * 0.6 + (has('regenerator') ? 2 : 0);
+  if (S.mod === 'jammer') regen *= 0.4;
 
   return {
     income: S.counts.reactor * 2,
@@ -120,7 +139,7 @@ function calc() {
     zapDmg,
     teslaDmg, teslaTargets,
     regen,
-    killMult: has('scrap') ? 1.5 : 1,
+    killMult: (has('scrap') ? 1.5 : 1) * (S.mod === 'goldrush' ? 2 : 1),
     novaDmg: NOVA_DMG * dmgMult,
   };
 }
@@ -130,18 +149,22 @@ function buildWave(w) {
   const q = [];
   if (w === MAX_WAVE) {
     for (let i = 0; i < 8; i++) q.push('dart');
-    q.push('brute', 'brute', 'splitter');
+    q.push('brute', 'brute', 'splitter', 'spitter', 'spitter');
     // shuffle escorts, boss enters last
     for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
     q.push('boss');
     return q;
   }
-  for (let i = 0; i < 5 + 3 * (w - 1); i++) q.push('dart');
+  let darts = 5 + 3 * (w - 1);
+  if (S.mod === 'swarm') darts = Math.round(darts * 1.6);
+  for (let i = 0; i < darts; i++) q.push('dart');
   if (w >= 3) for (let i = 0; i < Math.floor(w / 2); i++) q.push('brute');
   if (w >= 4) for (let i = 0; i < Math.floor((w - 2) / 2); i++) q.push('splitter');
+  if (w >= 5) for (let i = 0; i < Math.floor((w - 3) / 2); i++) q.push('spitter');
   for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
-  // one random enemy per wave arrives as an ELITE from wave 4
+  // one random enemy per wave arrives as an ELITE from wave 4 (two under TITANS)
   if (w >= 4) q[Math.floor(Math.random() * q.length)] += '!';
+  if (S.mod === 'titans' && q.length > 1) q[Math.floor(Math.random() * q.length / 2)] += '!';
   return q;
 }
 
@@ -160,16 +183,20 @@ function spawnEnemy(type, opts) {
     else { x = Math.random() * W; y = H + 14; }
   }
   const scale = type === 'boss' ? 1 : Math.pow(1.22, w - 1);
-  const hp = T.hp * scale * (opts.hpMult || 1) * (elite ? 3 : 1);
+  let hpMod = 1;
+  if (S.mod === 'swarm') hpMod *= 0.7;
+  if (S.mod === 'titans' && type === 'brute') hpMod *= 1.6;
+  const hp = T.hp * scale * (opts.hpMult || 1) * (elite ? 3 : 1) * hpMod;
   enemies.push({
     x, y, type, elite,
     hp, max: hp,
-    speed: T.speed + Math.random() * T.spdVar,
+    speed: (T.speed + Math.random() * T.spdVar) * (S.mod === 'rush' ? 1.4 : 1),
     dps: T.dps * (elite ? 1.5 : 1),
     scrap: T.scrap * (1 + w * 0.12) * (elite ? 4 : 1) * (opts.hpMult || 1),
     size: T.size * (elite ? 1.35 : 1),
     color: T.color,
     wob: Math.random() * 7, flash: 0, minionT: 0,
+    spitT: 1 + Math.random() * SPIT_INTERVAL,
   });
 }
 
@@ -253,6 +280,17 @@ function nearestEnemy(x, y, maxDist) {
   return best;
 }
 
+function damageSpire(dmg) {
+  const fromShield = Math.min(S.shield, dmg);
+  S.shield -= fromShield;
+  dmg -= fromShield;
+  if (dmg > 0) {
+    S.hull -= dmg;
+    S.hitT = 0.15;
+  }
+  if (S.hull <= 0) { S.hull = 0; lose(); }
+}
+
 // ---------- tick ----------
 function tick(dt) {
   if (!S || S.paused || S.over) return;
@@ -302,6 +340,7 @@ function tick(dt) {
       sfx.wave();
       const r = cv.getBoundingClientRect();
       popup(r.left + W / 2, r.top + H * 0.25, 'WAVE ' + S.wave, 'var(--heat)');
+      if (S.mod) setTimeout(() => popup(r.left + W / 2, r.top + H * 0.25 + 30, MODS[S.mod].name, MODS[S.mod].color), 350);
       buzz([20, 40, 20]);
     }
   } else if (S.phase === 'combat') {
@@ -317,10 +356,28 @@ function tick(dt) {
 
     // movement + latched damage
     let latchedDps = 0;
+    const standoff = Math.min(W, H) * 0.38;
     for (const en of enemies) {
       const dx = cx - en.x, dy = cy - en.y;
       const d = Math.hypot(dx, dy) || 1;
-      if (d > coreR + en.size) {
+      if (en.type === 'spitter') {
+        en.latched = false;
+        if (d > standoff) {
+          en.x += (dx / d) * en.speed * dt;
+          en.y += (dy / d) * en.speed * dt;
+        } else {
+          // strafe slowly and shell the Spire
+          en.x += (-dy / d) * 12 * dt;
+          en.y += (dx / d) * 12 * dt;
+          en.spitT -= dt;
+          if (en.spitT <= 0) {
+            en.spitT = SPIT_INTERVAL;
+            const sd = Math.hypot(cx - en.x, cy - en.y) || 1;
+            shots.push({ x: en.x, y: en.y, vx: (cx - en.x) / sd * 95, vy: (cy - en.y) / sd * 95 });
+            beep(520, 0.06, 'sawtooth', 0.03);
+          }
+        }
+      } else if (d > coreR + en.size) {
         en.x += (dx / d) * en.speed * dt;
         en.y += (dy / d) * en.speed * dt;
         en.latched = false;
@@ -341,15 +398,22 @@ function tick(dt) {
       }
     }
     if (latchedDps > 0) {
-      let dmg = latchedDps * dt;
-      const fromShield = Math.min(S.shield, dmg);
-      S.shield -= fromShield;
-      dmg -= fromShield;
-      if (dmg > 0) {
-        S.hull -= dmg;
-        S.hitT = 0.15;
+      damageSpire(latchedDps * dt);
+      if (S.over) return;
+    }
+
+    // spitter shells fly at the Spire
+    for (let i = shots.length - 1; i >= 0; i--) {
+      const sh = shots[i];
+      sh.x += sh.vx * dt;
+      sh.y += sh.vy * dt;
+      if (Math.hypot(sh.x - cx, sh.y - cy) < coreR) {
+        shots.splice(i, 1);
+        damageSpire(SPIT_DMG);
+        fx.burstAt(sh.x, sh.y, '#63e0b8', 6);
+        beep(220, 0.08, 'sawtooth', 0.04);
+        if (S.over) return;
       }
-      if (S.hull <= 0) { S.hull = 0; return lose(); }
     }
 
     // thorns burn latched enemies
@@ -397,6 +461,20 @@ function tick(dt) {
       S.wave++;
       S.phase = 'calm';
       S.calmT = CALM_TIME;
+      shots.length = 0;
+      // roll the next wave's modifier (none before wave 3)
+      S.mod = (S.wave >= 3 && Math.random() < 0.55)
+        ? Object.keys(MODS)[Math.floor(Math.random() * Object.keys(MODS).length)]
+        : null;
+      // banked energy pays interest — save vs spend
+      const rate = INTEREST_RATE * (has('compound') ? 2.5 : 1);
+      const interest = Math.min(interestCap(S.wave), S.energy * rate);
+      if (interest >= 1) {
+        S.energy += interest;
+        S.earned += interest;
+        const ir = cv.getBoundingClientRect();
+        popup(ir.left + W / 2, ir.top + H / 2 + 80, '+' + fmt(interest) + icon('bolt') + ' interest', 'var(--energy)');
+      }
       // field crews patch the hull between waves
       const repair = WAVE_REPAIR + (has('fieldrepair') ? 8 : 0);
       const healed = Math.min(HULL_MAX - S.hull, repair);
@@ -512,6 +590,8 @@ function nova(e) {
     en.y += (dy / d) * 90;
     hurtEnemy(en, R.novaDmg, '#8ad8ff');
   }
+  for (const sh of shots) fx.burstAt(sh.x, sh.y, '#63e0b8', 4);
+  shots.length = 0; // the blast wipes incoming shells
   sfx.nova();
   buzz([20, 30, 50]);
   popAt(e, cv, icon('nova') + ' NOVA', 'var(--charge)');
@@ -737,6 +817,8 @@ function buildStats() {
       ${row('shield', 'Shield', Math.ceil(S.shield) + '/' + Math.ceil(shieldMax()) + ' · +' + R.regen.toFixed(1) + '/s')}
       ${row('rift', 'Repair/wave', '+' + (WAVE_REPAIR + (has('fieldrepair') ? 8 : 0)))}
       ${row('reactor', 'Income', '+' + fmt(R.income) + '/s · kills ×' + R.killMult)}
+      ${row('bolt', 'Interest', Math.round(INTEREST_RATE * (has('compound') ? 2.5 : 1) * 100) + '%/wave, cap ' + interestCap(S.wave))}
+      ${row('hazard', 'Modifier', S.mod ? MODS[S.mod].name : '—')}
     </div>
     <div class="info-sec">
       <h3>${icon('cards')} CARDS (${S.cards.length})</h3>
@@ -792,6 +874,7 @@ function buildInfo() {
       ${row('hazard', 'Darts', '<span style="color:#ff9d4d">Orange</span>, fast, fragile. The swarm.')}
       ${row('hazard', 'Splitters', '<span style="color:#b45cff">Purple diamonds</span> — burst into 3 darts when killed.')}
       ${row('hazard', 'Brutes', '<span style="color:#ff5c4d">Red pentagons</span> — slow, tanky, heavy hitters.')}
+      ${row('hazard', 'Spitters', '<span style="color:#63e0b8">Teal lobbers</span> — hold at range and shell the Spire. Zap them.')}
       ${row('sparkles', 'Elites', 'One per wave arrives <span style="color:#ffd75c">gold-ringed</span>: 3× HP, 4×[bolt].')}
       ${row('skull', 'THE MAW', 'The <span style="color:#ff2d6d">wave-10 boss</span>. Births darts while it lives.')}
     </div>
@@ -801,6 +884,12 @@ function buildInfo() {
       ${row('shield', 'Aegis Orb', 'Rarer drop. Tap it: [shield] Shield instantly refills.')}
       ${row('flux', 'Overdrive', 'Kills charge the gold ring around the Spire. When it pulses, tap the Spire: ' + OD_TIME + 's of doubled firepower.')}
       ${row('rift', 'Field Repair', '+' + WAVE_REPAIR + ' hull patched after every cleared wave.')}
+      ${row('bolt', 'Interest', 'Each cleared wave pays +' + Math.round(INTEREST_RATE * 100) + '% of your banked [bolt] (capped). Saving has value.')}
+    </div>
+    <div class="info-sec">
+      <h3>${icon('hazard')} WAVE MODIFIERS</h3>
+      <p>${iconize('From wave 3, about half of waves roll a mutator, announced during the countdown:')}</p>
+      ${Object.values(MODS).map(M => row('hazard', M.name, M.desc)).join('')}
     </div>
     <div class="info-sec">
       <h3>${icon('cards')} CARD TAGS</h3>
@@ -1030,6 +1119,13 @@ function drawEnemy(en, t) {
   } else if (en.type === 'splitter') {
     // diamond that visibly wants to come apart
     ctx.moveTo(s, 0); ctx.lineTo(0, s * 0.8); ctx.lineTo(-s, 0); ctx.lineTo(0, -s * 0.8);
+  } else if (en.type === 'spitter') {
+    // three-lobed shell-lobber
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      ctx.moveTo(0, 0);
+      ctx.arc(Math.cos(a) * s * 0.55, Math.sin(a) * s * 0.55, s * 0.5, 0, Math.PI * 2);
+    }
   } else if (en.type === 'boss') {
     // spiked maw
     for (let i = 0; i < 14; i++) {
@@ -1137,12 +1233,39 @@ function drawRift(dt) {
     ctx.stroke();
   }
 
-  // wave countdown during calm
+  // wave countdown during calm (announces the modifier)
   if (S.phase === 'calm' && !S.paused && !S.over) {
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(232,232,245,0.8)';
     ctx.fillText('WAVE ' + S.wave + ' IN ' + Math.ceil(S.calmT), cx, cy - coreR * 2);
+    if (S.mod) {
+      const M = MODS[S.mod];
+      ctx.fillStyle = M.color;
+      ctx.fillText(M.name, cx, cy - coreR * 2 + 18);
+      ctx.font = '10px monospace';
+      ctx.fillStyle = 'rgba(232,232,245,0.6)';
+      ctx.fillText(M.desc.replace(/\[\w+\]/g, ''), cx, cy - coreR * 2 + 32);
+    }
+  }
+  // active modifier tag during combat
+  if (S.phase === 'combat' && S.mod && !S.over) {
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = MODS[S.mod].color;
+    ctx.fillText(MODS[S.mod].name, W / 2, enemies.find(e => e.type === 'boss') ? 46 : 16);
+  }
+
+  // spitter shells
+  for (const sh of shots) {
+    ctx.beginPath();
+    ctx.arc(sh.x, sh.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#63e0b8';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sh.x - sh.vx * 0.05, sh.y - sh.vy * 0.05, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(99,224,184,0.4)';
+    ctx.fill();
   }
 
   // overdrive: gold charge ring around the Spire; pulses when ready
