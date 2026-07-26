@@ -7,7 +7,9 @@
    ========================================================= */
 
 // ---------- tuning ----------
-const MAX_WAVE = 10;
+const MAX_WAVE = 25;
+const BOSS_WAVES = [10, 18, 25]; // mid-bosses + finale
+const HP_GROWTH = 1.15;    // enemy hp multiplier per wave
 const HULL_MAX = 100;
 const BASE_SHIELD = 30;
 const BASE_REGEN = 1.2;    // shield/s
@@ -18,20 +20,20 @@ const NOVA_DMG = 16;
 const NOVA_CD = 15;
 const HOLD_TIME = 1;       // press-and-hold seconds to confirm a card
 const OD_MAX = 100;        // overdrive charge
-const OD_TIME = 6;         // seconds of overdrive
-const WAVE_REPAIR = 4;     // hull repaired after each cleared wave
+const OD_TIME = 5;         // seconds of overdrive
+const WAVE_REPAIR = 3;     // hull repaired after each cleared wave
 
 const ENEMY_TYPES = {
   dart:     { hp: 6,   speed: 38, spdVar: 14, dps: 4,  scrap: 3,   size: 7.5, color: '#ff9d4d' },
   splitter: { hp: 14,  speed: 28, spdVar: 6,  dps: 6,  scrap: 7,   size: 10,  color: '#b45cff' },
   brute:    { hp: 26,  speed: 21, spdVar: 5,  dps: 9,  scrap: 10,  size: 12,  color: '#ff5c4d' },
   spitter:  { hp: 11,  speed: 30, spdVar: 6,  dps: 0,  scrap: 8,   size: 9,   color: '#63e0b8' },
-  boss:     { hp: 550, speed: 9,  spdVar: 1,  dps: 22, scrap: 250, size: 26,  color: '#ff2d6d' },
+  boss:     { hp: 500, speed: 9,  spdVar: 1,  dps: 22, scrap: 200, size: 26,  color: '#ff2d6d' },
 };
 const SPIT_INTERVAL = 2.6;  // seconds between spitter shots
 const SPIT_DMG = 6;
 const INTEREST_RATE = 0.10; // share of banked energy paid after each wave
-const interestCap = w => 25 + 15 * w;
+const interestCap = w => 20 + 10 * w;
 
 // wave modifiers: ~half of waves from 3 on roll one, announced during the calm
 const MODS = {
@@ -44,10 +46,10 @@ const MODS = {
 const modIs = k => S.mod === k;
 
 const MACHINES = {
-  reactor: { name: 'Reactor',    icon: 'reactor', base: 20,  growth: 1.5,  desc: '+2[bolt]/s income' },
-  turret:  { name: 'Turret',     icon: 'turret',  base: 30,  growth: 1.5,  desc: '1 shot/s · 4 dmg' },
+  reactor: { name: 'Reactor',    icon: 'reactor', base: 25,  growth: 1.5,  desc: '+2[bolt]/s income' },
+  turret:  { name: 'Turret',     icon: 'turret',  base: 35,  growth: 1.5,  desc: '1 shot/s · 4 dmg' },
   shield:  { name: 'Shield Gen', icon: 'shield',  base: 40,  growth: 1.5,  desc: '+15 max [shield] · +0.6/s' },
-  tesla:   { name: 'Tesla Coil', icon: 'tesla',   base: 100, growth: 1.6,  desc: 'every 3s: chain 6 dmg ×2' },
+  tesla:   { name: 'Tesla Coil', icon: 'tesla',   base: 120, growth: 1.6,  desc: 'every 3s: chain 6 dmg ×2' },
 };
 const MACHINE_COLORS = { reactor: '#9d7cff', turret: '#ffd75c', shield: '#4dd8ff', tesla: '#b45cff' };
 
@@ -87,7 +89,7 @@ let S;
 const enemies = [];
 function newRun() {
   S = {
-    energy: 35, earned: 0, time: 0,
+    energy: 25, earned: 0, time: 0,
     hull: HULL_MAX, kills: 0,
     shield: BASE_SHIELD,
     wave: 1, phase: 'calm', calmT: CALM_TIME,
@@ -147,15 +149,17 @@ function calc() {
 // ---------- enemies ----------
 function buildWave(w) {
   const q = [];
-  if (w === MAX_WAVE) {
-    for (let i = 0; i < 8; i++) q.push('dart');
-    q.push('brute', 'brute', 'splitter', 'spitter', 'spitter');
+  if (BOSS_WAVES.includes(w)) {
+    for (let i = 0; i < Math.round(4 + w * 0.5); i++) q.push('dart');
+    for (let i = 0; i < Math.floor(w / 6); i++) q.push('brute');
+    for (let i = 0; i < Math.floor(w / 9); i++) q.push('splitter');
+    for (let i = 0; i < Math.floor(w / 9); i++) q.push('spitter');
     // shuffle escorts, boss enters last
     for (let i = q.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [q[i], q[j]] = [q[j], q[i]]; }
     q.push('boss');
     return q;
   }
-  let darts = 5 + 3 * (w - 1);
+  let darts = 5 + Math.round(2.2 * (w - 1));
   if (S.mod === 'swarm') darts = Math.round(darts * 1.6);
   for (let i = 0; i < darts; i++) q.push('dart');
   if (w >= 3) for (let i = 0; i < Math.floor(w / 2); i++) q.push('brute');
@@ -182,7 +186,7 @@ function spawnEnemy(type, opts) {
     else if (side === 2) { x = Math.random() * W; y = -14; }
     else { x = Math.random() * W; y = H + 14; }
   }
-  const scale = type === 'boss' ? 1 : Math.pow(1.22, w - 1);
+  const scale = type === 'boss' ? Math.pow(1.14, w - 1) : Math.pow(HP_GROWTH, w - 1);
   let hpMod = 1;
   if (S.mod === 'swarm') hpMod *= 0.7;
   if (S.mod === 'titans' && type === 'brute') hpMod *= 1.6;
@@ -190,7 +194,7 @@ function spawnEnemy(type, opts) {
   enemies.push({
     x, y, type, elite,
     hp, max: hp,
-    speed: (T.speed + Math.random() * T.spdVar) * (S.mod === 'rush' ? 1.4 : 1),
+    speed: (T.speed + Math.random() * T.spdVar) * (S.mod === 'rush' ? 1.4 : 1) * (1 + Math.min(0.3, (w - 1) * 0.013)),
     dps: T.dps * (elite ? 1.5 : 1),
     scrap: T.scrap * (1 + w * 0.12) * (elite ? 4 : 1) * (opts.hpMult || 1),
     size: T.size * (elite ? 1.35 : 1),
@@ -222,7 +226,7 @@ function killEnemy(en, colorHint) {
 
   // overdrive charges off kills
   if (S.odT <= 0 && S.od < OD_MAX) {
-    S.od = Math.min(OD_MAX, S.od + 5 + en.scrap * 0.12);
+    S.od = Math.min(OD_MAX, S.od + 4 + en.scrap * 0.10);
     if (S.od >= OD_MAX && !S.odReadyPinged) {
       S.odReadyPinged = true;
       sfx.chime();
@@ -247,8 +251,8 @@ function killEnemy(en, colorHint) {
 
   // drops: tap to collect (or Magnet Drones auto-collect)
   const roll = Math.random();
-  if (roll < 0.10) pickups.push({ x: en.x, y: en.y, kind: 'scrap', t: 5, value: 12 + S.wave * 4 });
-  else if (roll < 0.16) pickups.push({ x: en.x, y: en.y, kind: 'orb', t: 5 });
+  if (roll < 0.08) pickups.push({ x: en.x, y: en.y, kind: 'scrap', t: 5, value: 12 + S.wave * 4 });
+  else if (roll < 0.13) pickups.push({ x: en.x, y: en.y, kind: 'orb', t: 5 });
 }
 
 function collectPickup(pk) {
@@ -373,7 +377,7 @@ function tick(dt) {
           if (en.spitT <= 0) {
             en.spitT = SPIT_INTERVAL;
             const sd = Math.hypot(cx - en.x, cy - en.y) || 1;
-            shots.push({ x: en.x, y: en.y, vx: (cx - en.x) / sd * 95, vy: (cy - en.y) / sd * 95 });
+            shots.push({ x: en.x, y: en.y, vx: (cx - en.x) / sd * 95, vy: (cy - en.y) / sd * 95, dmg: SPIT_DMG + S.wave * 0.25 });
             beep(520, 0.06, 'sawtooth', 0.03);
           }
         }
@@ -389,7 +393,7 @@ function tick(dt) {
       // the boss births darts while it lives
       if (en.type === 'boss') {
         en.minionT += dt;
-        if (en.minionT >= 4) {
+        if (en.minionT >= Math.max(2.5, 4 - S.wave * 0.05)) {
           en.minionT = 0;
           for (let k = 0; k < 2; k++) spawnEnemy('dart', { x: en.x + (Math.random() - .5) * 40, y: en.y + (Math.random() - .5) * 40 });
           fx.burstAt(en.x, en.y, '#ff2d6d', 8);
@@ -409,7 +413,7 @@ function tick(dt) {
       sh.y += sh.vy * dt;
       if (Math.hypot(sh.x - cx, sh.y - cy) < coreR) {
         shots.splice(i, 1);
-        damageSpire(SPIT_DMG);
+        damageSpire(sh.dmg || SPIT_DMG);
         fx.burstAt(sh.x, sh.y, '#63e0b8', 6);
         beep(220, 0.08, 'sawtooth', 0.04);
         if (S.over) return;
@@ -559,7 +563,7 @@ function zap(e) {
   S.combo = Math.min(25, S.combo + 1);
   S.bestCombo = Math.max(S.bestCombo, S.combo);
   S.comboT = 1.1;
-  const mult = 1 + (S.combo - 1) * 0.05;
+  const mult = 1 + (S.combo - 1) * 0.04;
   const dmg = R.zapDmg * mult;
   arcs.push({ x: cx, y: cy, tx: target.x, ty: target.y, t: 0.15, max: 0.15 });
   fx.burstAt(target.x, target.y, '#4dd8ff', 5);
@@ -612,7 +616,16 @@ function overdrive(e) {
 let draftOffer = [];
 function openDraft() {
   const pool = CARDS.filter(c => !has(c.id));
-  if (pool.length === 0) return;
+  if (pool.length === 0) {
+    // deck exhausted: pay salvage instead
+    const bonus = 20 + S.wave * 6;
+    S.energy += bonus;
+    S.earned += bonus;
+    const r = cv.getBoundingClientRect();
+    popup(r.left + W / 2, r.top + H / 2 - 30, '+' + fmt(bonus) + icon('bolt') + ' salvage', 'var(--energy)');
+    sfx.chime();
+    return;
+  }
   for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pool[i], pool[j]] = [pool[j], pool[i]];
@@ -876,7 +889,7 @@ function buildInfo() {
       ${row('hazard', 'Brutes', '<span style="color:#ff5c4d">Red pentagons</span> — slow, tanky, heavy hitters.')}
       ${row('hazard', 'Spitters', '<span style="color:#63e0b8">Teal lobbers</span> — hold at range and shell the Spire. Zap them.')}
       ${row('sparkles', 'Elites', 'One per wave arrives <span style="color:#ffd75c">gold-ringed</span>: 3× HP, 4×[bolt].')}
-      ${row('skull', 'THE MAW', 'The <span style="color:#ff2d6d">wave-10 boss</span>. Births darts while it lives.')}
+      ${row('skull', 'Bosses', 'Waves ' + BOSS_WAVES.join('/') + ': a <span style="color:#ff2d6d">Maw</span> with a health bar that births darts while it lives.')}
     </div>
     <div class="info-sec">
       <h3>${icon('bolt')} DROPS &amp; OVERDRIVE</h3>
@@ -1322,7 +1335,7 @@ function drawRift(dt) {
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ff8fb3';
-    ctx.fillText('THE MAW', W / 2, 34);
+    ctx.fillText(S.wave >= MAX_WAVE ? 'THE MAW' : 'MAW SPAWN', W / 2, 34);
   }
 
   // overdrive screen tint
